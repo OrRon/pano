@@ -7,6 +7,8 @@ rendering, budgets and redaction happen inside the daemon (see
 [architecture.md](architecture.md)).
 
 Server name: `pano`. Tool prefix: `pano_`. Resource scheme: `pano://`.
+For what happens on the wire — spawn, handshake, tool metadata, the
+off/on states — see [mcp-protocol.md](mcp-protocol.md).
 
 ## Registering
 

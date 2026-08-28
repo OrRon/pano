@@ -16,6 +16,7 @@ All notable changes to this project are documented here. The format follows
 - LLM traffic explain: Anthropic Messages, OpenAI Chat Completions and Responses, Gemini — stream reassembly, final message, tool calls, usage.
 - Live rules engine: delay, set/remove header, set query, rewrite body (JSON patch / regex / template), mock, block, redirect, throttle, tag, breakpoints with hold/resume/drop; presets `slow_network`, `fail_rate`, `offline_host`, `timeout`, `rate_limit`, `hold`; TTLs.
 - HAR 1.2 export/import.
+- `docs/mcp-protocol.md`: the agent↔pano wire as measured on a real Claude Code session — topology and handshake diagrams, tool metadata (`annotations`, `_meta.anthropic/*`), off/on states, sizes, a worked token-efficient search.
 - `pano ui`: interactive terminal UI (Bubble Tea v2) with live list, detail tabs, explain, diff, rules and held-request drawers; design notes in `docs/tui-design.md`.
 
 ### Changed

@@ -92,6 +92,7 @@ Apache-2.0 — see [LICENSE](LICENSE).
 
 - [docs/architecture.md](docs/architecture.md) — process topology, where decryption happens, capture pipeline, rules engine, system proxy + watchdog, data layout, package map
 - [docs/mcp.md](docs/mcp.md) — registering the MCP server, tool catalog, escalation ladder, resources, prompts, token budgets, redaction, safety
+- [docs/mcp-protocol.md](docs/mcp-protocol.md) — the wire: process topology, the JSON-RPC handshake as captured, what each tool advertises (`annotations`, `_meta`), off/on states, a measured token-efficient search
 - [docs/cli.md](docs/cli.md) — every command, filter syntax, view modes, `pano run --` environment, exit codes
 - [docs/rules.md](docs/rules.md) — rule schema, actions, phases, presets, breakpoints, recipes
 - [docs/config.md](docs/config.md) — `config.toml` keys and defaults, environment variables, `~/.pano` layout
