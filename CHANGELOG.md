@@ -19,6 +19,7 @@ All notable changes to this project are documented here. The format follows
 - `pano ui`: interactive terminal UI (Bubble Tea v2) with live list, detail tabs, explain, diff, rules and held-request drawers; design notes in `docs/tui-design.md`.
 
 ### Changed
+- pano is no longer "always on". `pano mcp` never starts the daemon (the `[mcp] autostart` config key is gone); while the daemon is down every MCP tool and resource answers *"pano is off … ask the user to run `pano on`"* and starts working again the moment it is back, without a client restart. `pano off` now stops the daemon after restoring the proxy settings (`--keep-daemon` keeps the old proxy-only behaviour). See ADR 0006.
 - `pano ui`: colour-coded Explain page (provider/model/status, request and usage segments, `[text]`/`[tool_use]`/`[thinking]` items, stop reasons, errors, chat roles), a body syntax palette (strings / numbers / booleans) shared by the summary, schema and pretty views, numbered detail tabs (`1 Summary  2 Request …`) and tab-aware footer hints so Explain → Request/Response is discoverable. `Enter` and `x` open the same detail view (Summary vs Explain tab); `x` inside the view jumps to Explain instead of toggling, and falls back to Summary with a toast when explain is unavailable for the flow.
 
 ### Fixed

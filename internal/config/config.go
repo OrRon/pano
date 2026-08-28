@@ -70,7 +70,6 @@ type Breakpoints struct {
 
 // MCP configures the MCP server.
 type MCP struct {
-	Autostart  bool `toml:"autostart"`
 	ExposeHTTP bool `toml:"expose_http"`
 }
 
@@ -129,7 +128,7 @@ func Default() Config {
 		Redaction:   Redaction{Enabled: true},
 		Views:       Views{DefaultMaxBytes: 4096, ListPageSize: 50, StringTruncate: 200},
 		Breakpoints: Breakpoints{HoldTimeout: Duration{120 * time.Second}},
-		MCP:         MCP{Autostart: true, ExposeHTTP: true},
+		MCP:         MCP{ExposeHTTP: true},
 		SystemProxy: SystemProxy{RestoreOnExit: true},
 		Limits:      Limits{MaxConns: 10000},
 	}

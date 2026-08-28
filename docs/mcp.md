@@ -45,9 +45,15 @@ in [config.md](config.md). There is no authentication on this port beyond
 the loopback bind, so disable it (`expose_http = false`) if other local
 users share the machine.
 
-`pano mcp` starts the daemon automatically when the socket is not answering
-(`[mcp] autostart = true`). Nothing but protocol messages is written to
-stdout; logs go to stderr.
+`pano mcp` **never starts the daemon** — pano is only on between `pano on`
+(or `pano start`) and `pano off` (or `pano stop`), and only the user runs
+those. Claude Code spawns `pano mcp` once per session, so the server stays up
+regardless and, while the daemon is down, every tool returns `isError` with
+*"pano is off: … ask the user to run `pano on`"*; resources fail with the same
+message. Each call dials `~/.pano/pano.sock` fresh, so the tools work again
+the moment the daemon is back — no client restart or reconnect needed. See
+[ADR 0006](adr/0006-mcp-follows-the-daemon.md). Nothing but protocol
+messages is written to stdout; logs go to stderr.
 
 ## Server instructions
 
@@ -61,6 +67,7 @@ truncates longer instructions):
 > pano_tail polls for new flows with a cursor — loop it while a user reproduces something.
 > Secrets (API keys, cookies, bearer tokens) are redacted by default; pass reveal_secrets=true only when the user needs the actual value.
 > pano_system_proxy CHANGES macOS SYSTEM SETTINGS — only call it when the user explicitly asks. Installing the CA is terminal-only (pano ca install).
+> pano only runs while the user has it on: if a tool answers "pano is off", ask the user to run pano on in a terminal, then retry — you cannot start it yourself.
 > Flow ids are short strings like "f8k2q"; every result ends with a next: hint.
 
 ## Tool catalog

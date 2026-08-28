@@ -128,37 +128,42 @@ func (a *App) cmdStop() *cobra.Command {
 		Use:   "stop",
 		Short: "Stop the daemon (restores system proxy settings)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c := a.client()
-			if !c.Ping(cmd.Context()) {
+			if !a.client().Ping(cmd.Context()) {
 				if !a.quiet {
 					a.println("pano is not running")
 				}
 				return nil
 			}
-			pid := 0
-			if b, err := os.ReadFile(a.paths.PIDFile()); err == nil {
-				pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
-			}
-			if err := c.Shutdown(cmd.Context()); err != nil && !errors.Is(err, client.ErrNotRunning) {
-				return err
-			}
-			deadline := time.Now().Add(10 * time.Second)
-			for time.Now().Before(deadline) {
-				if pid > 0 {
-					if p, err := os.FindProcess(pid); err != nil || p.Signal(syscall.Signal(0)) != nil {
-						break
-					}
-				} else if !c.Ping(cmd.Context()) {
-					break
-				}
-				time.Sleep(100 * time.Millisecond)
-			}
-			if !a.quiet {
-				a.printf("%s pano stopped\n", a.c(green, "✓"))
-			}
-			return nil
+			return a.stopDaemon(cmd.Context())
 		},
 	}
+}
+
+// stopDaemon asks a running daemon to shut down and waits for it to exit.
+func (a *App) stopDaemon(ctx context.Context) error {
+	c := a.client()
+	pid := 0
+	if b, err := os.ReadFile(a.paths.PIDFile()); err == nil {
+		pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+	}
+	if err := c.Shutdown(ctx); err != nil && !errors.Is(err, client.ErrNotRunning) {
+		return err
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if pid > 0 {
+			if p, err := os.FindProcess(pid); err != nil || p.Signal(syscall.Signal(0)) != nil {
+				break
+			}
+		} else if !c.Ping(ctx) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !a.quiet {
+		a.printf("%s pano stopped\n", a.c(green, "✓"))
+	}
+	return nil
 }
 
 func (a *App) cmdStatus() *cobra.Command {
@@ -272,9 +277,14 @@ browsers accept the certificates it mints (macOS shows one password prompt).`,
 }
 
 func (a *App) cmdOff() *cobra.Command {
-	return &cobra.Command{
+	var keep bool
+	cmd := &cobra.Command{
 		Use:   "off",
-		Short: "Restore the previous macOS proxy settings",
+		Short: "Restore the previous macOS proxy settings and stop the daemon",
+		Long: `Restores the proxy settings snapshotted by 'pano on', then stops the daemon
+so nothing keeps running (and MCP tools report "pano is off") until the next
+'pano on'. Pass --keep-daemon to only restore the proxy settings, e.g. when
+you still want 'pano run --' or the MCP server to work.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			c := a.client()
@@ -287,12 +297,20 @@ func (a *App) cmdOff() *cobra.Command {
 				return err
 			}
 			if a.jsonOut {
-				return a.printJSON(sp)
+				if err := a.printJSON(sp); err != nil {
+					return err
+				}
+			} else {
+				a.printf("%s system proxy off (previous settings restored)\n", a.c(green, "✓"))
 			}
-			a.printf("%s system proxy off (previous settings restored)\n", a.c(green, "✓"))
-			return nil
+			if keep {
+				return nil
+			}
+			return a.stopDaemon(ctx)
 		},
 	}
+	cmd.Flags().BoolVar(&keep, "keep-daemon", false, "restore the proxy settings but leave the daemon running")
+	return cmd
 }
 
 func (a *App) restoreStale(ctx context.Context) error {

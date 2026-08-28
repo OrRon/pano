@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/orron/pano/internal/api"
+	"github.com/orron/pano/internal/client"
+	"github.com/orron/pano/internal/config"
 	"github.com/orron/pano/internal/flow"
 )
 
@@ -98,5 +102,34 @@ func TestRootCommandTree(t *testing.T) {
 	}
 	if !strings.Contains(mcpJSON("/usr/local/bin/pano"), `"args": [`) {
 		t.Fatal("mcpJSON")
+	}
+}
+
+// TestMCPDoesNotStartDaemon pins ADR 0006: `pano mcp` serves even when the
+// daemon is down and must never spawn one — that is the user's `pano on`.
+func TestMCPDoesNotStartDaemon(t *testing.T) {
+	t.Setenv("PANO_HOME", t.TempDir())
+	daemonStarted, mcpServed := false, false
+	root := New(Hooks{
+		Daemon: func(context.Context, config.Paths, config.Config, DaemonOverrides) error {
+			daemonStarted = true
+			return nil
+		},
+		MCP: func(context.Context, *client.Client, config.Paths) error { mcpServed = true; return nil },
+	})
+	root.SetArgs([]string{"--sock", filepath.Join(t.TempDir(), "none.sock"), "mcp"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("pano mcp with no daemon: %v", err)
+	}
+	if !mcpServed || daemonStarted {
+		t.Fatalf("mcpServed=%v daemonStarted=%v; want served without starting the daemon", mcpServed, daemonStarted)
+	}
+}
+
+func TestOffHasKeepDaemonFlag(t *testing.T) {
+	root := New(Hooks{})
+	off, _, err := root.Find([]string{"off"})
+	if err != nil || off.Flags().Lookup("keep-daemon") == nil {
+		t.Fatalf("pano off must expose --keep-daemon (err=%v)", err)
 	}
 }

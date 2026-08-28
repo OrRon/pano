@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -21,6 +22,7 @@ To test an app under bad conditions use pano_rule_add presets (slow_network, fai
 pano_tail polls for new flows with a cursor — loop it while a user reproduces something.
 Secrets (API keys, cookies, bearer tokens) are redacted by default; pass reveal_secrets=true only when the user needs the actual value.
 pano_system_proxy CHANGES macOS SYSTEM SETTINGS — only call it when the user explicitly asks. Installing the CA is terminal-only (pano ca install).
+pano only runs while the user has it on: if a tool answers "pano is off", ask the user to run pano on in a terminal, then retry — you cannot start it yourself.
 Flow ids are short strings like "f8k2q"; every result ends with a next: hint.`
 
 // Server wraps the MCP server with its dependencies.
@@ -79,9 +81,22 @@ func withNext(body, next string) *mcp.CallToolResult {
 	return text(strings.TrimRight(body, "\n"), "next: "+next)
 }
 
+// offMsg is what every tool and resource says while the daemon is not
+// running. The MCP server deliberately never starts the daemon: pano is only
+// on between `pano on`/`pano start` and `pano off`/`pano stop`.
+const offMsg = "pano is off: the daemon is not running. Ask the user to run `pano on` (or `pano start`) in a terminal, then retry."
+
+// describe turns a client error into the text an agent sees.
+func describe(err error) string {
+	if errors.Is(err, client.ErrNotRunning) {
+		return offMsg
+	}
+	return err.Error()
+}
+
 func errResult(err error, hint string) (*mcp.CallToolResult, any, error) {
-	msg := err.Error()
-	if hint != "" {
+	msg := describe(err)
+	if hint != "" && !errors.Is(err, client.ErrNotRunning) {
 		msg += "\nnext: " + hint
 	}
 	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: msg}}}, nil, nil

@@ -40,8 +40,9 @@ Constraints:
   the audit line.
 - The daemon also mounts the MCP server over Streamable HTTP on loopback so
   non-spawning clients use the identical code.
-- `pano mcp` auto-starts the daemon (configurable) so "register once, it
-  just works" holds.
+- ~~`pano mcp` auto-starts the daemon (configurable) so "register once, it
+  just works" holds.~~ Reversed by [ADR 0006](0006-mcp-follows-the-daemon.md):
+  `pano mcp` never starts the daemon.
 
 ## Consequences
 

@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -18,7 +19,7 @@ func (s *Server) registerResources() {
 	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		pem, err := s.c.CAPEM(ctx)
 		if err != nil {
-			return nil, err
+			return nil, errors.New(describe(err))
 		}
 		return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: req.Params.URI, MIMEType: "application/x-pem-file", Text: string(pem)}}}, nil
 	})
@@ -29,7 +30,7 @@ func (s *Server) registerResources() {
 	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		st, err := s.c.Status(ctx)
 		if err != nil {
-			return nil, err
+			return nil, errors.New(describe(err))
 		}
 		return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: req.Params.URI, MIMEType: "text/plain", Text: FormatStatus(st)}}}, nil
 	})
@@ -40,7 +41,7 @@ func (s *Server) registerResources() {
 	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		list, err := s.c.Flows(ctx, api.FlowFilter{Limit: 50})
 		if err != nil {
-			return nil, err
+			return nil, errors.New(describe(err))
 		}
 		return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: req.Params.URI, MIMEType: "text/plain", Text: FormatRows(list.Flows)}}}, nil
 	})
@@ -53,14 +54,14 @@ func (s *Server) registerResources() {
 		idStr, part, _ := strings.Cut(rest, "/")
 		id, err := parseID(idStr)
 		if err != nil {
-			return nil, err
+			return nil, errors.New(describe(err))
 		}
 		if part != "" {
 			return s.readRawBody(ctx, req.Params.URI, id, part)
 		}
 		d, err := s.c.Flow(ctx, id, api.FlowQuery{View: api.ViewSummary})
 		if err != nil {
-			return nil, err
+			return nil, errors.New(describe(err))
 		}
 		return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: req.Params.URI, MIMEType: "text/markdown", Text: d.Text}}}, nil
 	})
@@ -73,7 +74,7 @@ func (s *Server) registerResources() {
 		idStr, tail, _ := strings.Cut(rest, "/")
 		id, err := parseID(idStr)
 		if err != nil {
-			return nil, err
+			return nil, errors.New(describe(err))
 		}
 		part := strings.TrimPrefix(tail, "raw.")
 		return s.readRawBody(ctx, req.Params.URI, id, part)
@@ -87,7 +88,7 @@ func (s *Server) readRawBody(ctx context.Context, uri string, id flow.ID, part s
 	}
 	b, err := s.c.Body(ctx, id, part, true)
 	if err != nil {
-		return nil, err
+		return nil, errors.New(describe(err))
 	}
 	if len(b) > 1<<20 {
 		b = b[:1<<20]

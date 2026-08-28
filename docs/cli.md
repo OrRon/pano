@@ -1,8 +1,9 @@
 # CLI reference
 
 `pano` is a single binary. Most commands talk to the daemon over
-`~/.pano/pano.sock`; `pano start`, `pano on`, `pano run` and `pano mcp`
-start the daemon if it is not running. Output is coloured on a TTY and plain
+`~/.pano/pano.sock`; `pano start`, `pano on` and `pano run` start the daemon
+if it is not running (`pano mcp` deliberately does not — see
+[mcp.md](mcp.md)). Output is coloured on a TTY and plain
 otherwise; `--json` prints the control-API response verbatim.
 
 ```
@@ -88,8 +89,14 @@ is given.
 |---|---|
 | `-y, --yes` | do not prompt (installs the CA if needed) |
 
-`off` restores the snapshot. If the daemon is dead but `~/.pano/sysproxy.json`
-exists, `off` restores it directly.
+`off` restores the snapshot and then stops the daemon, so nothing keeps
+running — and the MCP tools report "pano is off" — until the next `on`.
+If the daemon is dead but `~/.pano/sysproxy.json` exists, `off` restores it
+directly.
+
+| Flag | Meaning |
+|---|---|
+| `--keep-daemon` | restore the proxy settings but leave the daemon running (for `pano run --` or MCP without the system proxy) |
 
 ### `pano doctor`
 
@@ -434,8 +441,9 @@ otherwise from the file over defaults); `path` prints `~/.pano/config.toml`;
 
 ### `pano mcp`
 
-Serve MCP on stdio (see [mcp.md](mcp.md)). `--http` prints the Streamable
-HTTP URL (`http://127.0.0.1:9092/mcp`) instead of serving.
+Serve MCP on stdio (see [mcp.md](mcp.md)). Does not start the daemon: tools
+answer "pano is off" until the user runs `pano on`. `--http` prints the
+Streamable HTTP URL (`http://127.0.0.1:9092/mcp`) instead of serving.
 
 ### `pano mcp install [--scope user|project|local]`
 

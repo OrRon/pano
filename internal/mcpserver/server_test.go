@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -57,5 +58,15 @@ func TestNewRegistersEverything(t *testing.T) {
 	}
 	if !out.IsError {
 		t.Fatal("expected IsError when daemon is down")
+	}
+	// The message must tell the agent that pano is off and how the *user*
+	// turns it on; the server never starts the daemon itself.
+	got := out.Content[0].(*mcp.TextContent).Text
+	if !strings.Contains(got, "pano is off") || !strings.Contains(got, "`pano on`") {
+		t.Fatalf("offline message = %q, want 'pano is off' + `pano on`", got)
+	}
+	// Resources say the same thing instead of leaking the client's wording.
+	if _, err := sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: "pano://status"}); err == nil || !strings.Contains(err.Error(), "pano is off") {
+		t.Fatalf("resource offline error = %v, want 'pano is off'", err)
 	}
 }

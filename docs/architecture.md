@@ -35,8 +35,10 @@ the daemon.
 - `pano start` execs a detached `pano daemon` (own session, stdout/stderr to
   `~/.pano/daemon.log`, pid in `~/.pano/daemon.pid`) and waits up to 6 s for
   `GET /v1/status` to answer. `pano start --foreground` runs it in-process.
-- `pano mcp` speaks MCP on stdin/stdout; it starts the daemon first if the
-  socket is not answering (`[mcp] autostart`). Logs go to stderr only.
+- `pano mcp` speaks MCP on stdin/stdout. It never starts the daemon: while
+  the socket is not answering every tool returns `isError` "pano is off …
+  run `pano on`", and calls succeed again as soon as the daemon is back
+  (ADR 0006). Logs go to stderr only.
 - The daemon also mounts the same MCP server on loopback TCP
   (`[mcp] expose_http`, `[proxy] mcp_port`) using the stateless Streamable
   HTTP transport, for clients that cannot spawn a process.

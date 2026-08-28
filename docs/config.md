@@ -44,7 +44,6 @@ string_truncate = 200
 hold_timeout = "120s"
 
 [mcp]
-autostart = true
 expose_http = true
 
 [system_proxy]
@@ -117,7 +116,6 @@ Zero disables a limit.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `autostart` | bool | `true` | `pano mcp` starts the daemon when the socket is not answering; with `false` it exits 3 instead |
 | `expose_http` | bool | `true` | mount the MCP server on `bind:mcp_port/mcp` (Streamable HTTP, stateless, unauthenticated loopback) |
 
 ### `[system_proxy]`

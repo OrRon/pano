@@ -16,7 +16,6 @@ import (
 
 	"github.com/orron/pano/internal/api"
 	"github.com/orron/pano/internal/ca"
-	"github.com/orron/pano/internal/client"
 	"github.com/orron/pano/internal/config"
 )
 
@@ -420,8 +419,9 @@ func (a *App) cmdMCP() *cobra.Command {
 
   claude mcp add --scope user --transport stdio pano -- pano mcp
 
-The daemon is started automatically if it is not running. Nothing is written
-to stdout except protocol messages; logs go to stderr.`,
+The server never starts the daemon: tools answer "pano is off" until you run
+'pano on' (or 'pano start') in a terminal, and work again the moment it is
+up. Nothing is written to stdout except protocol messages; logs go to stderr.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			if httpOnly {
@@ -435,18 +435,8 @@ to stdout except protocol messages; logs go to stderr.`,
 			if a.hooks.MCP == nil {
 				return errors.New("mcp server not available in this build")
 			}
-			c := a.client()
-			if !c.Ping(ctx) {
-				cfg, _ := config.Load(a.paths)
-				if !cfg.MCP.Autostart {
-					return client.ErrNotRunning
-				}
-				a.out = os.Stderr // never print to stdout in MCP mode
-				if err := a.spawnDaemon(ctx, DaemonOverrides{}); err != nil {
-					return err
-				}
-			}
-			return a.hooks.MCP(ctx, c, a.paths)
+			a.out = os.Stderr // never print to stdout in MCP mode
+			return a.hooks.MCP(ctx, a.client(), a.paths)
 		},
 	}
 	cmd.Flags().BoolVar(&httpOnly, "http", false, "print the Streamable HTTP MCP URL instead of serving stdio")

@@ -259,7 +259,7 @@ func parseID(s string) (flow.ID, error) {
 func (s *Server) toolStatus(ctx context.Context, _ *mcp.CallToolRequest, _ emptyIn) (*mcp.CallToolResult, any, error) {
 	st, err := s.c.Status(ctx)
 	if err != nil {
-		return errResult(err, "start the daemon: pano start")
+		return errResult(err, "")
 	}
 	return ok(withNext(FormatStatus(st), "pano_flows limit=20"))
 }
