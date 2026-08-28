@@ -1,0 +1,7 @@
+go test fuzz v1
+string("")
+[]byte("{\"a\":\"\\ba000\"}")
+string("")
+string("")
+string("00[\x9c)")
+int(64)

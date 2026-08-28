@@ -1,0 +1,6 @@
+data: {"candidates":[{"content":{"parts":[{"text":"Silent packets pass"}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":12,"totalTokenCount":12,"promptTokensDetails":[{"modality":"TEXT","tokenCount":12}]},"modelVersion":"gemini-2.5-flash","responseId":"cVZ0aLqVFPy2vdIPkY6i0AY"}
+
+data: {"candidates":[{"content":{"parts":[{"text":"\nthrough the glass of the proxy—\n"}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":11,"totalTokenCount":23,"promptTokensDetails":[{"modality":"TEXT","tokenCount":12}]},"modelVersion":"gemini-2.5-flash","responseId":"cVZ0aLqVFPy2vdIPkY6i0AY"}
+
+data: {"candidates":[{"content":{"parts":[{"text":"every byte, seen."}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":12,"candidatesTokenCount":20,"totalTokenCount":32,"promptTokensDetails":[{"modality":"TEXT","tokenCount":12}],"candidatesTokensDetails":[{"modality":"TEXT","tokenCount":20}]},"modelVersion":"gemini-2.5-flash","responseId":"cVZ0aLqVFPy2vdIPkY6i0AY"}
+

@@ -1,0 +1,4 @@
+provider: anthropic  model: claude-opus-5  stream: no  status: 429
+request: system 155 chars · 4 messages (u3/a1) · 6 tools (Read, Edit, Bash, Grep, Glob, …(+1)) · max_tokens 8,192 · temperature 0.2 · stream yes · thinking budget 2,048
+usage: -
+errors: HTTP 429: rate_limit_error: This request would exceed the rate limit for your organization (org_0123) of 50 requests per minute. Please retry after 2 seconds.

@@ -1,0 +1,189 @@
+package proxy
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"strings"
+	"time"
+
+	"golang.org/x/net/http2"
+
+	"github.com/orron/pano/internal/flow"
+)
+
+// handleConnect terminates a CONNECT tunnel: either splices it opaquely
+// (bypass) or wraps it in TLS with a minted certificate and serves HTTP on the
+// decrypted stream.
+func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
+	target := r.Host
+	if _, _, err := net.SplitHostPort(target); err != nil {
+		target = net.JoinHostPort(target, "443")
+	}
+	if s.isSelf(target) {
+		http.Error(w, "pano: refusing to proxy to itself", http.StatusForbidden)
+		return
+	}
+	select {
+	case s.sem <- struct{}{}:
+	default:
+		http.Error(w, "pano: too many connections", http.StatusServiceUnavailable)
+		return
+	}
+	defer func() { <-s.sem }()
+	s.active.Add(1)
+	defer s.active.Add(-1)
+
+	host, _, _ := net.SplitHostPort(target)
+	client := clientAddr(r.Context())
+
+	rc := http.NewResponseController(w)
+	conn, brw, err := rc.Hijack()
+	if err != nil {
+		http.Error(w, "pano: hijack unsupported: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+	if _, err := io.WriteString(conn, "HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
+		return
+	}
+	raw := newMITMConn(conn, brw.Reader, target)
+
+	if s.bypassed(host) || s.opts.TLS == nil {
+		s.splice(raw, target, client, "bypass")
+		return
+	}
+
+	tlsConn := tls.Server(raw, s.opts.TLS)
+	hctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	err = tlsConn.HandshakeContext(hctx)
+	cancel()
+	if err != nil {
+		s.recordHandshakeFailure(target, client, err)
+		return
+	}
+	defer tlsConn.Close()
+
+	switch tlsConn.ConnectionState().NegotiatedProtocol {
+	case "h2":
+		if !s.opts.DisableH2 {
+			ctx := withClient(withTunnel(context.Background(), target), client)
+			s.h2srv.ServeConn(tlsConn, &http2.ServeConnOpts{
+				Context:    ctx,
+				BaseConfig: s.h2,
+				Handler:    s.h2.Handler,
+			})
+			return
+		}
+		fallthrough
+	default:
+		ln := newOneConnListener(tlsConn)
+		_ = s.mitm.Serve(ln)
+	}
+}
+
+// splice copies bytes both ways without decryption and records a tunnel flow.
+func (s *Server) splice(client net.Conn, target, clientAddr, reason string) {
+	f := &flow.Flow{
+		ID: s.ids.Next(), Session: s.opts.Session(), Kind: flow.KindTunnel, Client: clientAddr,
+		Scheme: "https", State: flow.StateActive, T: flow.Timing{Start: time.Now()},
+		Tags: []string{reason},
+	}
+	f.Host, f.Port = splitHostPort(target, 443)
+	s.emitStarted(f)
+
+	up, err := net.DialTimeout("tcp", target, 10*time.Second)
+	if err != nil {
+		f.Error = "dial: " + err.Error()
+		s.finish(f, flow.StateFailed)
+		return
+	}
+	defer up.Close()
+	f.T.Connected = time.Now()
+
+	var upBytes, downBytes int64
+	done := make(chan struct{}, 2)
+	go func() {
+		n, _ := copyBuf(up, client)
+		upBytes = n
+		closeWrite(up)
+		done <- struct{}{}
+	}()
+	go func() {
+		n, _ := copyBuf(client, up)
+		downBytes = n
+		closeWrite(client)
+		done <- struct{}{}
+	}()
+	<-done
+	<-done
+	f.ReqBody.Size, f.RespBody.Size = upBytes, downBytes
+	s.finish(f, flow.StateDone)
+}
+
+func (s *Server) recordHandshakeFailure(target, client string, err error) {
+	f := &flow.Flow{
+		ID: s.ids.Next(), Session: s.opts.Session(), Kind: flow.KindTunnel, Client: client,
+		Scheme: "https", State: flow.StateFailed, T: flow.Timing{Start: time.Now()},
+	}
+	f.Host, f.Port = splitHostPort(target, 443)
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "unknown certificate authority") || strings.Contains(msg, "unknown_ca"),
+		strings.Contains(msg, "bad certificate"), strings.Contains(msg, "certificate unknown"):
+		f.Error = "client rejected pano certificate (CA not trusted, or the app pins certificates — add host to bypass)"
+	case errors.Is(err, io.EOF):
+		f.Error = "client closed connection during TLS handshake (likely certificate rejected / pinning)"
+	default:
+		f.Error = "tls handshake: " + msg
+	}
+	s.emitStarted(f)
+	s.finish(f, flow.StateFailed)
+}
+
+func copyBuf(dst io.Writer, src io.Reader) (int64, error) {
+	bp := bufPool.Get().(*[]byte)
+	defer bufPool.Put(bp)
+	return io.CopyBuffer(dst, src, *bp)
+}
+
+func closeWrite(c net.Conn) {
+	type cw interface{ CloseWrite() error }
+	if x, ok := c.(cw); ok {
+		_ = x.CloseWrite()
+		return
+	}
+	if m, ok := c.(*mitmConn); ok {
+		if x, ok := m.Conn.(cw); ok {
+			_ = x.CloseWrite()
+			return
+		}
+	}
+	_ = c.Close()
+}
+
+func splitHostPort(hp string, def int) (string, int) {
+	h, p, err := net.SplitHostPort(hp)
+	if err != nil {
+		return hp, def
+	}
+	port := def
+	if n, err := parsePort(p); err == nil {
+		port = n
+	}
+	return h, port
+}
+
+func parsePort(p string) (int, error) {
+	n := 0
+	for _, c := range p {
+		if c < '0' || c > '9' {
+			return 0, errors.New("bad port")
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, nil
+}

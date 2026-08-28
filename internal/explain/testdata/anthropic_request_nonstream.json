@@ -1,0 +1,1 @@
+{"model":"claude-opus-5","max_tokens":1024,"system":"You are a terse assistant.","messages":[{"role":"user","content":"In one sentence, what does the store package do?"}]}

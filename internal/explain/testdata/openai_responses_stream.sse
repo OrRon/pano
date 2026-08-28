@@ -1,0 +1,72 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_67ccd2bed1ec8190b14f964abc0542670bb6a6b452d3795b","object":"response","created_at":1741476542,"status":"in_progress","error":null,"incomplete_details":null,"instructions":"You are a terse assistant.","max_output_tokens":800,"model":"gpt-4.1-2025-04-14","output":[],"parallel_tool_calls":true,"previous_response_id":null,"reasoning":{"effort":"medium","summary":"auto"},"store":true,"temperature":0.3,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[{"type":"function","name":"get_weather","description":"Get the current weather for a location.","parameters":{"type":"object","properties":{"location":{"type":"string"}},"required":["location"]},"strict":true},{"type":"web_search_preview"}],"top_p":1.0,"truncation":"disabled","usage":null,"user":null,"metadata":{}}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_67ccd2bed1ec8190b14f964abc0542670bb6a6b452d3795b","object":"response","created_at":1741476542,"status":"in_progress","error":null,"incomplete_details":null,"instructions":"You are a terse assistant.","max_output_tokens":800,"model":"gpt-4.1-2025-04-14","output":[],"parallel_tool_calls":true,"previous_response_id":null,"reasoning":{"effort":"medium","summary":"auto"},"store":true,"temperature":0.3,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[{"type":"function","name":"get_weather","description":"Get the current weather for a location.","parameters":{"type":"object","properties":{"location":{"type":"string"}},"required":["location"]},"strict":true},{"type":"web_search_preview"}],"top_p":1.0,"truncation":"disabled","usage":null,"user":null,"metadata":{}}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":2,"output_index":0,"item":{"id":"rs_67ccd2c0a1b48190","type":"reasoning","summary":[]}}
+
+event: response.reasoning_summary_part.added
+data: {"type":"response.reasoning_summary_part.added","sequence_number":3,"item_id":"rs_67ccd2c0a1b48190","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":""}}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":4,"item_id":"rs_67ccd2c0a1b48190","output_index":0,"summary_index":0,"delta":"**Planning the lookup**\n\n"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":5,"item_id":"rs_67ccd2c0a1b48190","output_index":0,"summary_index":0,"delta":"I need current weather, so I should call get_weather for Paris."}
+
+event: response.reasoning_summary_text.done
+data: {"type":"response.reasoning_summary_text.done","sequence_number":6,"item_id":"rs_67ccd2c0a1b48190","output_index":0,"summary_index":0,"text":"**Planning the lookup**\n\nI need current weather, so I should call get_weather for Paris."}
+
+event: response.reasoning_summary_part.done
+data: {"type":"response.reasoning_summary_part.done","sequence_number":7,"item_id":"rs_67ccd2c0a1b48190","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":"**Planning the lookup**\n\nI need current weather, so I should call get_weather for Paris."}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":8,"output_index":0,"item":{"id":"rs_67ccd2c0a1b48190","type":"reasoning","summary":[{"type":"summary_text","text":"**Planning the lookup**\n\nI need current weather, so I should call get_weather for Paris."}]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":9,"output_index":1,"item":{"id":"fc_67ccd2c1e3d08190","type":"function_call","status":"in_progress","arguments":"","call_id":"call_9d8fA3kLm2","name":"get_weather"}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","sequence_number":10,"item_id":"fc_67ccd2c1e3d08190","output_index":1,"delta":"{\"location\""}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","sequence_number":11,"item_id":"fc_67ccd2c1e3d08190","output_index":1,"delta":":\"Paris, "}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","sequence_number":12,"item_id":"fc_67ccd2c1e3d08190","output_index":1,"delta":"France\"}"}
+
+event: response.function_call_arguments.done
+data: {"type":"response.function_call_arguments.done","sequence_number":13,"item_id":"fc_67ccd2c1e3d08190","output_index":1,"arguments":"{\"location\":\"Paris, France\"}"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":14,"output_index":1,"item":{"id":"fc_67ccd2c1e3d08190","type":"function_call","status":"completed","arguments":"{\"location\":\"Paris, France\"}","call_id":"call_9d8fA3kLm2","name":"get_weather"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":15,"output_index":2,"item":{"id":"msg_67ccd2c3f9a08190","type":"message","status":"in_progress","role":"assistant","content":[]}}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","sequence_number":16,"item_id":"msg_67ccd2c3f9a08190","output_index":2,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":17,"item_id":"msg_67ccd2c3f9a08190","output_index":2,"content_index":0,"delta":"Fetching the ","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":18,"item_id":"msg_67ccd2c3f9a08190","output_index":2,"content_index":0,"delta":"Paris forecast","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":19,"item_id":"msg_67ccd2c3f9a08190","output_index":2,"content_index":0,"delta":" now.","logprobs":[]}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","sequence_number":20,"item_id":"msg_67ccd2c3f9a08190","output_index":2,"content_index":0,"text":"Fetching the Paris forecast now.","logprobs":[]}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","sequence_number":21,"item_id":"msg_67ccd2c3f9a08190","output_index":2,"content_index":0,"part":{"type":"output_text","text":"Fetching the Paris forecast now.","annotations":[]}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":22,"output_index":2,"item":{"id":"msg_67ccd2c3f9a08190","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Fetching the Paris forecast now.","annotations":[]}]}}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":23,"response":{"id":"resp_67ccd2bed1ec8190b14f964abc0542670bb6a6b452d3795b","object":"response","created_at":1741476542,"status":"completed","error":null,"incomplete_details":null,"instructions":"You are a terse assistant.","max_output_tokens":800,"model":"gpt-4.1-2025-04-14","output":[{"id":"rs_67ccd2c0a1b48190","type":"reasoning","summary":[{"type":"summary_text","text":"**Planning the lookup**\n\nI need current weather, so I should call get_weather for Paris."}]},{"id":"fc_67ccd2c1e3d08190","type":"function_call","status":"completed","arguments":"{\"location\":\"Paris, France\"}","call_id":"call_9d8fA3kLm2","name":"get_weather"},{"id":"msg_67ccd2c3f9a08190","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Fetching the Paris forecast now.","annotations":[]}]}],"parallel_tool_calls":true,"previous_response_id":null,"reasoning":{"effort":"medium","summary":"auto"},"store":true,"temperature":0.3,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[{"type":"function","name":"get_weather","description":"Get the current weather for a location.","parameters":{"type":"object","properties":{"location":{"type":"string"}},"required":["location"]},"strict":true},{"type":"web_search_preview"}],"top_p":1.0,"truncation":"disabled","usage":{"input_tokens":120,"input_tokens_details":{"cached_tokens":0},"output_tokens":60,"output_tokens_details":{"reasoning_tokens":20},"total_tokens":180},"user":null,"metadata":{}}}
+

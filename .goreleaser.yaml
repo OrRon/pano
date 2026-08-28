@@ -1,0 +1,50 @@
+version: 2
+project_name: pano
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: pano
+    main: ./cmd/pano
+    binary: pano
+    env: [CGO_ENABLED=0]
+    goos: [darwin, linux]
+    goarch: [arm64, amd64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X github.com/orron/pano/internal/cli.version={{.Version}}
+      - -X github.com/orron/pano/internal/cli.commit={{.ShortCommit}}
+      - -X github.com/orron/pano/internal/cli.date={{.Date}}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - artifacts: archive
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^feat'
+    - title: Fixes
+      regexp: '^fix'
+    - title: Other
+      order: 999
+
+homebrew_casks:
+  - name: pano
+    repository:
+      owner: orron
+      name: homebrew-tap
+    homepage: https://github.com/orron/pano
+    description: All-seeing HTTPS proxy for AI agents
+    license: Apache-2.0

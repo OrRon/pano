@@ -1,0 +1,57 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - exhaustive
+    - gocritic
+    - gosec
+    - misspell
+    - nilerr
+    - revive
+    - unparam
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - (*os.File).Close
+        - (net.Conn).Close
+        - (net.Listener).Close
+        - (*crypto/tls.Conn).Close
+        - (*net/http.Response).Body.Close
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Fprint
+        - (*bufio.Writer).Flush
+    gosec:
+      excludes:
+        - G115 # integer conversions are bounds-checked where they matter
+        - G118 # lifecycle goroutines intentionally outlive request contexts
+        - G204 # subprocess argv is fixed by design (networksetup, security, claude)
+        - G304 # file paths come from config / CLI flags
+        - G404 # math/rand is fine for probabilistic rules
+        - G702 # command "injection": pano run executes the user's own command
+        - G704 # "SSRF": pano is a proxy; dialing user-chosen hosts is the feature
+        - G705 # "XSS": the local landing page renders fixed text
+    revive:
+      rules:
+        - name: exported
+          arguments: ["disableStutteringCheck"]
+        - name: package-comments
+    exhaustive:
+      default-signifies-exhaustive: true
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec, bodyclose, errcheck, unparam]
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports

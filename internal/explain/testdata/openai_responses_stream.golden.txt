@@ -1,0 +1,8 @@
+provider: openai-responses  model: gpt-4.1-2025-04-14  stream: yes  status: 200
+request: system 26 chars · 1 message (u1) · 2 tools (get_weather, web_search_preview) · max_output_tokens 800 · temperature 0.3 · stream yes · reasoning_effort medium
+usage: in 120 (cache_read 0) · out 60 (reasoning 20) · total 180 · stop: completed
+final:
+  [reasoning] (88 chars, hidden — include=thinking to show)
+  [function_call] get_weather {"location":"Paris, France"}
+  [text] "Fetching the Paris forecast now." (32 chars)
+errors: none

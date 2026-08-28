@@ -1,0 +1,8 @@
+provider: anthropic  model: claude-opus-5  stream: yes (INCOMPLETE — 14 events, last: content_block_delta)  status: 200
+request: system 155 chars · 4 messages (u3/a1) · 6 tools (Read, Edit, Bash, Grep, Glob, …(+1)) · max_tokens 8,192 · temperature 0.2 · stream yes · thinking budget 2,048
+usage: in 4,812 (cache_read 4,100, cache_write 0) · out 3 · total 4,815
+final:
+  [thinking] (154 chars, hidden — include=thinking to show)
+  [text] "I'll read the store package first." (34 chars)
+  [tool_use] Read {}
+errors: content[2] Read: tool input JSON incomplete: {"file_path": "/home/dev/

@@ -1,0 +1,6 @@
+provider: openai-chat  model: gpt-4.1-2025-04-14  stream: no  status: 200
+request: system 98 chars · 5 messages (u1/a1/s1/t2) · 1 tool (get_weather) · max_completion_tokens 512 · temperature 0
+usage: in 210 (cache_read 128) · out 24 · total 234 · stop: stop
+final:
+  [text] "San Francisco is 18 °C and foggy; Tokyo is 27 °C and humid." (59 chars)
+errors: none

@@ -1,0 +1,6 @@
+provider: gemini  model: gemini-2.5-flash  stream: yes  status: 200
+request: system 41 chars · 1 message (u1) · 1 tool (lookup_word) · max_output_tokens 256 · temperature 0.7 · stream yes
+usage: in 12 · out 20 · total 32 · stop: STOP
+final:
+  [text] "Silent packets pass\nthrough the glass of the proxy—\nevery byte, seen." (69 chars)
+errors: none
