@@ -81,7 +81,8 @@ than slowing the proxy.
 
 Pre-1.0. macOS is the primary target; the engine is pure Go and builds on Linux,
 where `pano run --` and `pano env` work but `pano on/off` and `pano ca install`
-print manual instructions instead.
+print manual instructions instead. See [docs/roadmap.md](docs/roadmap.md) for
+what is deliberately not done yet.
 
 ## License
 
