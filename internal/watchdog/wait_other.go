@@ -35,9 +35,14 @@ func WaitExit(ctx context.Context, pid int) error {
 	}
 }
 
-// alive reports whether pid still exists. A permission error means the
+// alive reports whether pid still exists and has not terminated. A process
+// that has exited but not been reaped (a zombie) counts as gone, matching
+// the kqueue NOTE_EXIT semantics on darwin. A permission error means the
 // process exists but belongs to someone else, which counts as alive.
 func alive(pid int) bool {
+	if exited(pid) {
+		return false
+	}
 	p, err := os.FindProcess(pid)
 	if err != nil {
 		return false
