@@ -171,7 +171,7 @@ afterwards.
 | `--type CLASS` | `json\|sse\|html\|js\|css\|img\|bin\|text\|font\|form\|xml\|media` or a MIME prefix such as `application/` |
 | `--min-bytes N` | request + response size ≥ N |
 | `--errors` | status ≥ 400 or a transport/TLS error |
-| `--tag T` | flows tagged by a `tag` rule (or `imported`, `bypass`) |
+| `--tag T` | flows tagged by a `tag` rule (or `imported`, and for tunnels the reason they were not decrypted: `never`, `unlisted`, `off`) |
 | `--rule ID` | flows a given rule (id or name) acted on |
 | `--state S` | `all\|held\|active\|done\|failed\|replayed\|mocked\|blocked` |
 | `--kind K` | `http\|websocket\|tunnel` |
@@ -196,7 +196,7 @@ Row format:
 id     time     meth host                        path                                      st  dur     up     down   type  flags
 2k7    14:03:12 POST api.anthropic.com           /v1/messages                              200 4.21s   8.1k   22.4k  sse   llm,stream
 2k5    14:03:01 POST api.openai.com              /v1/chat/completions                      429 92ms    1.4k   210    json  llm,err
-2k4    14:02:58 TUN  gateway.icloud.com          /                                         -   1.2s    3.1k   9.8k   tunnel bypass
+2k4    14:02:58 TUN  gateway.icloud.com          /                                         -   1.2s    3.1k   9.8k   tunnel never
 ```
 
 `meth` shows `TUN` for undecrypted tunnels and `WS` for WebSockets; `st` is
@@ -371,7 +371,7 @@ Release a held exchange, optionally edited.
 
 Drop it; the client sees a connection reset.
 
-## Sessions, bypass, HAR
+## Sessions, decrypt policy, HAR
 
 ### `pano session ls | new <name> | rm <id> | clear`
 
@@ -379,16 +379,45 @@ Sessions group flows; `new` ends the current one and becomes current;
 `rm` deletes a session and its flows (not the current one); `clear`
 forgets in-memory flows only (persisted history stays).
 
-### `pano bypass ls | add <glob>... | rm <glob>...`
+### `pano decrypt`
 
-Hosts tunneled without decryption (recorded as `kind=tunnel`). Changes take
-effect immediately and are saved to `config.toml`. Defaults: `*.apple.com
-*.icloud.com *.icloud-content.com *.mzstatic.com *.cdn-apple.com
-*.push.apple.com *.apple-cloudkit.com *.ls.apple.com *.crashlytics.com`.
+Which HTTPS tunnels are decrypted. Prints the mode, **every** entry of the
+`only` and `never` lists, and the hosts that refused pano's certificate in
+the last hour (pinning suspects) with the command that silences them.
+
+```
+decrypt   all  (every host except never)
+  only    —
+  never   *.push.apple.com  *.icloud.com  *.icloud-content.com  *.apple-cloudkit.com  *.ls.apple.com
+  rejected mmg.whatsapp.net ×14 2m ago  media-mrs2-3.cdn.whatsapp.net ×9 7m ago
+          certificate refused in the last hour (pinning?) → pano decrypt never add --rejected
+```
+
+| Command | Effect |
+|---|---|
+| `pano decrypt all` | decrypt every host except the `never` list (default) |
+| `pano decrypt only` | decrypt just the `only` list; everything else is tunneled (`kind=tunnel`, tag `unlisted`) |
+| `pano decrypt off` | decrypt nothing; every tunnel records host, bytes and timing only (tag `off`) |
+| `pano decrypt only add <host\|glob>...` / `rm` | edit the `only` list |
+| `pano decrypt never add <host\|glob>...` / `rm` | edit the `never` list — wins in every mode (tag `never`) |
+| `pano decrypt never add --rejected` | add every host that refused the certificate in the last hour |
+
+A bare host covers its subdomains (`whatsapp.net` matches `mmg.whatsapp.net`);
+`*` and `?` globs work as everywhere else. Entries are lowercased and lose a
+trailing dot or `:port`. Changes apply to the next connection, are saved to
+`config.toml` and written to `~/.pano/audit.log` with their source
+(`cli`/`mcp`/`tui`). Defaults for `never`: `*.push.apple.com *.icloud.com
+*.icloud-content.com *.apple-cloudkit.com *.ls.apple.com` — the macOS daemons
+that pin; anything else that pins is surfaced under `rejected` instead of
+being excluded up front.
 
 ```sh
-pano bypass add '*.bank.example' api.pinned.example
+pano decrypt only add api.anthropic.com localhost && pano decrypt only   # focus on one app
+pano decrypt never add whatsapp.net                                      # a pinned app
+pano decrypt all                                                         # back to everything
 ```
+
+Rejected hosts are suggestions: pano never adds them by itself.
 
 ### `pano export har`
 

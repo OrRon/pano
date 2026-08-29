@@ -54,9 +54,12 @@ func (a *App) cmdStart() *cobra.Command {
 				if a.hooks.Daemon == nil {
 					return errors.New("daemon not available in this build")
 				}
-				cfg, err := config.Load(a.paths)
+				cfg, warnings, err := config.LoadWithWarnings(a.paths)
 				if err != nil {
 					return err
+				}
+				for _, w := range warnings {
+					a.warn("%s", w)
 				}
 				ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 				defer stop()
@@ -225,6 +228,7 @@ func (a *App) renderStatus(st api.Status) {
 	if !st.Redaction {
 		a.printf("  %s secret redaction is OFF\n", a.c(yellow, "!"))
 	}
+	a.printf("%s\n", a.renderDecrypt(st.Decrypt, "  ", time.Now()))
 }
 
 func (a *App) cmdOn() *cobra.Command {
@@ -364,9 +368,12 @@ func (a *App) cmdDaemon() *cobra.Command {
 			if err := a.paths.Ensure(); err != nil {
 				return err
 			}
-			cfg, err := config.Load(a.paths)
+			cfg, warnings, err := config.LoadWithWarnings(a.paths)
 			if err != nil {
 				return err
+			}
+			for _, w := range warnings {
+				a.warn("%s", w)
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 			defer stop()

@@ -59,30 +59,52 @@ Look for tunnel flows with an error:
 
 ```sh
 pano flows --kind tunnel --errors
-#  2k4  14:02:58 TUN  gateway.icloud.com  …  ↳ client rejected pano certificate (CA not trusted, or the app pins certificates — add host to bypass)
+#  2k4  14:02:58 TUN  gateway.icloud.com  …  ↳ client rejected pano certificate (CA not trusted, or the app pins certificates — run `pano decrypt never add gateway.icloud.com`)
 ```
 
 `client rejected pano certificate` means the client saw pano's leaf and
 refused it. Either the CA is not trusted yet (`pano ca status`,
-`pano doctor`) or the app **pins** its certificates. Pinned apps cannot be
-decrypted; add them to the bypass list so they are spliced through
-untouched:
+`pano doctor`) or the app **pins** its certificates. You do not have to hunt
+for these rows: every host that refused the certificate in the last hour is
+listed under **rejected** in `pano decrypt`, `pano status`, `pano doctor`,
+`pano_status` and the TUI header. Pinned apps cannot be decrypted; put them
+on the `never` list so they are spliced through untouched:
 
 ```sh
-pano bypass add '*.bank.example' api.pinned.example
+pano decrypt never add whatsapp.net '*.bank.example'   # or: pano decrypt never add --rejected
 ```
 
-Bypassed hosts still appear as `kind=tunnel` rows (method `TUN`, tag
-`bypass`) with byte counts but no headers or bodies. The default bypass list
-covers Apple services and Crashlytics; `pano bypass ls` shows it.
+pano suggests, it never adds a host by itself. `never` hosts still appear as
+`kind=tunnel` rows (method `TUN`, tag `never`) with byte counts but no
+headers or bodies. The default `never` list covers Apple services and
+Crashlytics; `pano decrypt` prints it in full.
+
+## Can I decrypt only my own app and leave the rest of the machine alone?
+
+Yes — that is what mode `only` is for:
+
+```sh
+pano decrypt only add api.myapp.example localhost
+pano decrypt only
+```
+
+Everything not on the list is tunneled (rows tagged `unlisted`), so browser
+sessions, mail and chat apps never pass through pano in plaintext. `pano
+decrypt off` goes one step further and decrypts nothing — useful before the
+CA is trusted, or when you only need to see which hosts an app talks to.
+`pano decrypt all` restores the default. The mode and both lists are always
+shown in full by `pano status` and in the TUI (`D`).
 
 ## Why is some Apple traffic not decrypted?
 
-`*.apple.com`, `*.icloud.com`, `*.icloud-content.com`, `*.mzstatic.com`,
-`*.cdn-apple.com`, `*.push.apple.com`, `*.apple-cloudkit.com`,
-`*.ls.apple.com` are bypassed by default because Apple's system daemons pin
-certificates and break (iCloud, App Store, push notifications, Maps) when
-intercepted. Remove a glob with `pano bypass rm` if you really need it.
+`*.push.apple.com`, `*.icloud.com`, `*.icloud-content.com`,
+`*.apple-cloudkit.com` and `*.ls.apple.com` are on the `never` list by
+default because those macOS daemons pin certificates and visibly break (push
+notifications, iCloud sync, CloudKit, Maps) when intercepted. The list is
+deliberately minimal: other Apple hosts (App Store, software update, CDNs)
+are decrypted like everything else, and any that turn out to pin appear
+under **rejected** for you to add. Remove a glob with `pano decrypt never rm`
+if you really need it.
 
 ## Firefox does not trust the certificate
 
@@ -102,7 +124,7 @@ Whether a browser then accepts that and continues without ECH is up to the
 browser and has changed between releases. If an ECH-enabled site refuses to
 load through pano, disable ECH in the browser
 (`chrome://flags/#encrypted-client-hello`; Firefox
-`network.dns.echconfig.enabled`) or add the host to the bypass list.
+`network.dns.echconfig.enabled`) or add the host to the `never` list.
 
 ## HTTP/3 / QUIC?
 
@@ -154,7 +176,8 @@ The process is using pano as a proxy but does not trust the CA:
 - Does the app honour system proxy settings? Many CLI tools only read
   `HTTPS_PROXY`; use `eval "$(pano env)"`.
 - `pano flows --kind tunnel` shows connections that arrived but were not
-  decrypted (bypass or handshake failure).
+  decrypted (`never` list, mode `only`/`off`, or a handshake failure); `pano
+  decrypt` shows the mode, the lists and recently rejected hosts.
 
 ## Performance expectations
 

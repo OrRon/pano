@@ -62,7 +62,7 @@ func (m *Model) render() string {
 	base := strings.Join(parts, "\n")
 
 	switch m.mode {
-	case modeRules, modeHeld:
+	case modeRules, modeHeld, modeDecrypt:
 		if m.bp() == bpS {
 			// full-screen replacement (no compositing on small terminals)
 			panel := m.renderDrawer(w, bodyH)
@@ -71,8 +71,22 @@ func (m *Model) render() string {
 			return strings.Join(parts, "\n")
 		}
 		pw := min(w-6, 96)
-		ph := min(bodyH-2, max(8, len(m.rules)+len(m.held)+6))
+		want := len(m.rules) + len(m.held) + 6
+		if m.mode == modeDecrypt {
+			pw = min(w-6, 110)
+			want = m.decryptRows() + 1
+		}
+		ph := min(bodyH-2, max(8, want))
 		return m.overlay(base, m.renderDrawer(pw, ph), w-pw-4, 2, pw)
+	case modeActions:
+		if m.bp() == bpS {
+			parts = append([]string{header}, m.renderActions(w, bodyH)...)
+			parts = append(parts, footer)
+			return strings.Join(parts, "\n")
+		}
+		pw := min(w-8, 100)
+		ph := min(bodyH-2, m.actionsRows())
+		return m.overlay(base, m.renderActions(pw, ph), (w-pw)/2-1, (h-ph)/2-1, pw)
 	case modeHelp:
 		if m.bp() == bpS {
 			parts = append([]string{header}, m.renderHelp(w, bodyH)...)

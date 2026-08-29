@@ -64,12 +64,13 @@ type Daemon struct {
 	mcpLn  net.Listener
 	client *client.Client
 
-	session atomic.Value // string
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
-	auditMu sync.Mutex
-	wdMu    sync.Mutex
-	wdPID   int
+	session   atomic.Value // string
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	auditMu   sync.Mutex
+	decryptMu sync.Mutex // serialises ChangeDecrypt read-modify-write
+	wdMu      sync.Mutex
+	wdPID     int
 }
 
 // Run starts the daemon and blocks until ctx is cancelled or Shutdown is called.
@@ -158,9 +159,10 @@ func build(opts Options) (*Daemon, error) {
 		Addr: net.JoinHostPort(cfg.Proxy.Bind, strconv.Itoa(cfg.Proxy.Port)),
 		TLS:  d.ca.TLSConfig(), Sink: d, Hooks: d.rules,
 		MaxBody: cfg.Capture.MaxBodyBytes, MaxInflight: cfg.Capture.MaxInflightBytes, MaxConns: cfg.Limits.MaxConns,
-		Bypass: cfg.Proxy.Bypass, CaptureWS: cfg.Capture.WebSocketFrames,
-		Session: func() string { s, _ := d.session.Load().(string); return s },
-		IDs:     d.ids, Logger: logger, CAPEM: d.ca.CertPEM(),
+		Decrypt:   proxy.DecryptPolicy{Mode: proxy.DecryptMode(cfg.Decrypt.Mode), Only: cfg.Decrypt.Only, Never: cfg.Decrypt.Never},
+		CaptureWS: cfg.Capture.WebSocketFrames,
+		Session:   func() string { s, _ := d.session.Load().(string); return s },
+		IDs:       d.ids, Logger: logger, CAPEM: d.ca.CertPEM(),
 	})
 	d.proxy.SetCapturing(cfg.Capture.Enabled)
 	d.sysp = sysproxy.New(d.paths.SysProxyState(), logger)

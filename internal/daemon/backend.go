@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -45,7 +46,7 @@ func (d *Daemon) Status(ctx context.Context) api.Status {
 			Trusted: trust.Installed, Supported: trust.Supported, Detail: trust.Detail, Warning: d.ca.ExpiryWarning(),
 		},
 		SystemProxy: d.SysProxy(ctx), Rules: len(rules), RulesEnabled: enabled, Held: len(d.rules.Held()),
-		Persist: d.db != nil, Bypass: d.proxy.Bypass(), Redaction: d.cfg.Redaction.Enabled, BusSeq: d.bus.Seq(), StartedAt: d.started,
+		Persist: d.db != nil, Decrypt: d.Decrypt(ctx), Redaction: d.cfg.Redaction.Enabled, BusSeq: d.bus.Seq(), StartedAt: d.started,
 	}
 	if d.mcpLn != nil {
 		st.MCPAddr = d.mcpLn.Addr().String()
@@ -282,6 +283,8 @@ func (d *Daemon) GetFlow(ctx context.Context, id flow.ID, q api.FlowQuery) (api.
 	}
 	det.Text = strings.TrimRight(sb.String(), "\n")
 	switch {
+	case f.Kind == flow.KindTunnel && f.State == flow.StateFailed && strings.Contains(f.Error, "pano decrypt never add"):
+		det.Next = fmt.Sprintf("pano_decrypt action=add list=never hosts=[%q]  (client refused pano's certificate — pinning?)", f.Host)
 	case store.IsLLMHost(f.Host):
 		det.Next = fmt.Sprintf("pano_flow_explain id=%s", f.ID.Short())
 	case q.View == api.ViewSummary && f.RespBody.Captured > 0:
@@ -738,20 +741,91 @@ func (d *Daemon) Resume(_ context.Context, id flow.ID, req api.ResumeRequest) er
 	return nil
 }
 
-// Bypass implements control.Backend.
-func (d *Daemon) Bypass(context.Context) []string { return d.proxy.Bypass() }
+// Decrypt implements control.Backend.
+func (d *Daemon) Decrypt(context.Context) api.Decrypt {
+	p := d.proxy.Decrypt()
+	out := api.Decrypt{Mode: string(p.Mode), Only: p.Only, Never: p.Never}
+	if out.Only == nil {
+		out.Only = []string{}
+	}
+	if out.Never == nil {
+		out.Never = []string{}
+	}
+	for _, r := range d.proxy.Rejected() {
+		out.Rejected = append(out.Rejected, api.RejectedHost{Host: r.Host, Count: r.Count, First: r.First, Last: r.Last, Error: r.Error})
+	}
+	return out
+}
 
-// SetBypass implements control.Backend.
-func (d *Daemon) SetBypass(_ context.Context, globs []string) error {
-	d.proxy.SetBypass(globs)
+// ChangeDecrypt implements control.Backend: validates and applies a partial
+// update, persists [decrypt] to config.toml, and returns the new state.
+func (d *Daemon) ChangeDecrypt(ctx context.Context, c api.DecryptChange) (api.Decrypt, error) {
+	d.decryptMu.Lock()
+	defer d.decryptMu.Unlock()
+	p := d.proxy.Decrypt()
+	if c.Mode != "" {
+		m, err := proxy.ParseDecryptMode(c.Mode)
+		if err != nil {
+			return api.Decrypt{}, api.BadRequest("%v", err)
+		}
+		p.Mode = m
+	}
+	addNever := c.AddNever
+	if slices.Contains(addNever, api.RejectedAlias) {
+		addNever = slices.DeleteFunc(slices.Clone(addNever), func(h string) bool { return h == api.RejectedAlias })
+		for _, r := range d.proxy.Rejected() {
+			addNever = append(addNever, r.Host)
+		}
+	}
+	var err error
+	if p.Only, err = editHostList(p.Only, c.AddOnly, c.RemoveOnly); err != nil {
+		return api.Decrypt{}, err
+	}
+	if p.Never, err = editHostList(p.Never, addNever, c.RemoveNever); err != nil {
+		return api.Decrypt{}, err
+	}
+	d.proxy.SetDecrypt(p)
 	cfg, err := config.Load(d.paths)
 	if err == nil {
-		cfg.Proxy.Bypass = globs
+		cfg.Decrypt = config.Decrypt{Mode: string(p.Mode), Only: p.Only, Never: p.Never}
 		if err := config.Save(d.paths, cfg); err != nil {
 			d.log.Warn("save config", "err", err)
 		}
 	}
-	return nil
+	d.cfg.Decrypt = config.Decrypt{Mode: string(p.Mode), Only: p.Only, Never: p.Never}
+	return d.Decrypt(ctx), nil
+}
+
+// editHostList applies removals then additions, normalising and deduplicating.
+// Removal accepts either the stored entry or its normalised form.
+func editHostList(list, add, remove []string) ([]string, error) {
+	out := make([]string, 0, len(list)+len(add))
+	for _, h := range list {
+		if h != "" {
+			out = append(out, h)
+		}
+	}
+	for _, r := range remove {
+		n, err := proxy.NormalizeHost(r)
+		if err != nil {
+			return nil, api.BadRequest("%v", err)
+		}
+		before := len(out)
+		out = slices.DeleteFunc(out, func(h string) bool { return h == n || h == r })
+		if len(out) == before {
+			return nil, api.NotFound("host", r)
+		}
+	}
+	for _, a := range add {
+		n, err := proxy.NormalizeHost(a)
+		if err != nil {
+			return nil, api.BadRequest("%v", err)
+		}
+		if !slices.Contains(out, n) {
+			out = append(out, n)
+		}
+	}
+	return out, nil
 }
 
 // HAR implements control.Backend.

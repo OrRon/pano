@@ -56,7 +56,7 @@ type Status struct {
 	RulesEnabled int       `json:"rules_enabled"`
 	Held         int       `json:"held"`
 	Persist      bool      `json:"persist"`
-	Bypass       []string  `json:"bypass"`
+	Decrypt      Decrypt   `json:"decrypt"`
 	Redaction    bool      `json:"redaction"`
 	BusSeq       uint64    `json:"bus_seq"`
 	StartedAt    time.Time `json:"started_at"`
@@ -358,6 +358,50 @@ type HARResult struct {
 	Count int    `json:"count"`
 	Bytes int64  `json:"bytes"`
 }
+
+// Decrypt is the HTTPS decryption policy plus the hosts that recently
+// refused pano's certificate. Every list is always complete: front ends print
+// entries, never counts.
+type Decrypt struct {
+	// Mode is all (decrypt everything except Never), only (decrypt just Only)
+	// or off (tunnel everything, record hosts and bytes only).
+	Mode string `json:"mode"`
+	// Only is decrypted when Mode is "only". Hosts cover their subdomains;
+	// globs (*, ?) are accepted.
+	Only []string `json:"only"`
+	// Never is never decrypted, in every mode (pinned apps).
+	Never []string `json:"never"`
+	// Rejected lists hosts whose client refused pano's certificate in the last
+	// hour — the usual sign of pinning. Suggestions only; never auto-applied.
+	Rejected []RejectedHost `json:"rejected,omitempty"`
+}
+
+// RejectedHost is one entry of Decrypt.Rejected.
+type RejectedHost struct {
+	Host  string    `json:"host"`
+	Count int       `json:"count"`
+	First time.Time `json:"first"`
+	Last  time.Time `json:"last"`
+	Error string    `json:"error"`
+}
+
+// DecryptChange is a partial update to the decrypt policy (PATCH
+// /v1/decrypt). Empty fields are left alone. Hosts are normalised (lowercase,
+// trailing dot and :port stripped) and deduplicated. The literal host
+// "@rejected" in AddNever expands to every currently rejected host.
+type DecryptChange struct {
+	Mode        string   `json:"mode,omitempty"`
+	AddOnly     []string `json:"add_only,omitempty"`
+	RemoveOnly  []string `json:"remove_only,omitempty"`
+	AddNever    []string `json:"add_never,omitempty"`
+	RemoveNever []string `json:"remove_never,omitempty"`
+	// Source names the front end making the change (cli, mcp, tui) for the
+	// audit log.
+	Source string `json:"source,omitempty"`
+}
+
+// RejectedAlias expands to every rejected host inside DecryptChange.AddNever.
+const RejectedAlias = "@rejected"
 
 // SysProxyRequest toggles the system proxy.
 type SysProxyRequest struct {

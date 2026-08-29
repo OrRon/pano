@@ -16,7 +16,7 @@ import (
 )
 
 // handleConnect terminates a CONNECT tunnel: either splices it opaquely
-// (bypass) or wraps it in TLS with a minted certificate and serves HTTP on the
+// (never list, mode only/off) or wraps it in TLS with a minted certificate and serves HTTP on the
 // decrypted stream.
 func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	target := r.Host
@@ -52,8 +52,12 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	raw := newMITMConn(conn, brw.Reader, target)
 
-	if s.bypassed(host) || s.opts.TLS == nil {
-		s.splice(raw, target, client, "bypass")
+	if decrypt, reason := s.policy.Load().Decide(host); !decrypt {
+		s.splice(raw, target, client, reason)
+		return
+	}
+	if s.opts.TLS == nil {
+		s.splice(raw, target, client, ReasonOff)
 		return
 	}
 
@@ -131,14 +135,19 @@ func (s *Server) recordHandshakeFailure(target, client string, err error) {
 	}
 	f.Host, f.Port = splitHostPort(target, 443)
 	msg := err.Error()
+	rejected := true
 	switch {
 	case strings.Contains(msg, "unknown certificate authority") || strings.Contains(msg, "unknown_ca"),
 		strings.Contains(msg, "bad certificate"), strings.Contains(msg, "certificate unknown"):
-		f.Error = "client rejected pano certificate (CA not trusted, or the app pins certificates — add host to bypass)"
+		f.Error = "client rejected pano certificate (CA not trusted, or the app pins certificates — run `pano decrypt never add " + f.Host + "`)"
 	case errors.Is(err, io.EOF):
-		f.Error = "client closed connection during TLS handshake (likely certificate rejected / pinning)"
+		f.Error = "client closed connection during TLS handshake (likely certificate rejected / pinning — run `pano decrypt never add " + f.Host + "`)"
 	default:
+		rejected = false
 		f.Error = "tls handshake: " + msg
+	}
+	if rejected {
+		s.rejected.add(f.Host, f.Error)
 	}
 	s.emitStarted(f)
 	s.finish(f, flow.StateFailed)

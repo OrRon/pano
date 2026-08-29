@@ -21,6 +21,7 @@ For api.anthropic.com / api.openai.com flows use pano_flow_explain instead of re
 To test an app under bad conditions use pano_rule_add presets (slow_network, fail_rate, offline_host, timeout, rate_limit, hold) with ttl_s so they expire; remove rules when done.
 pano_tail polls for new flows with a cursor — loop it while a user reproduces something.
 Secrets (API keys, cookies, bearer tokens) are redacted by default; pass reveal_secrets=true only when the user needs the actual value.
+pano_decrypt controls which HTTPS hosts are decrypted (mode all|only|off plus only/never lists); hosts that refuse pano's certificate show up in pano_status as "rejected" — add them to never if the user wants that app left alone, never silently.
 pano_system_proxy CHANGES macOS SYSTEM SETTINGS — only call it when the user explicitly asks. Installing the CA is terminal-only (pano ca install).
 pano only runs while the user has it on: if a tool answers "pano is off", ask the user to run pano on in a terminal, then retry — you cannot start it yourself.
 Flow ids are short strings like "f8k2q"; every result ends with a next: hint.`

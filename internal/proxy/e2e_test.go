@@ -266,15 +266,22 @@ func TestSSEStreamsLive(t *testing.T) {
 	}
 }
 
-func TestBypassSplice(t *testing.T) {
-	origin := originTLS(t, false, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "ok") })
-	e := start(t, func(o *proxy.Options) { o.Bypass = []string{"127.0.0.1"} })
-	// Client trusts only the origin's own cert: if pano intercepted, this would fail.
+// originOnlyClient trusts only the origin's own certificate, so any
+// interception by pano fails the handshake.
+func originOnlyClient(e *env, origin *httptest.Server) (*http.Client, *http.Transport) {
 	tr := &http.Transport{
 		Proxy:           http.ProxyURL(&url.URL{Scheme: "http", Host: e.addr}),
 		TLSClientConfig: &tls.Config{RootCAs: certPoolOf(origin), MinVersion: tls.VersionTLS12},
 	}
-	cli := &http.Client{Transport: tr}
+	return &http.Client{Transport: tr}, tr
+}
+
+func TestNeverListSplices(t *testing.T) {
+	origin := originTLS(t, false, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "ok") })
+	e := start(t, func(o *proxy.Options) {
+		o.Decrypt = proxy.DecryptPolicy{Mode: proxy.DecryptAll, Never: []string{"127.0.0.1"}}
+	})
+	cli, tr := originOnlyClient(e, origin)
 	resp, err := cli.Get(origin.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -282,25 +289,81 @@ func TestBypassSplice(t *testing.T) {
 	resp.Body.Close()
 	tr.CloseIdleConnections()
 	f := e.sink.waitDone(t)
-	if f.Kind != flow.KindTunnel || f.RespBody.Size == 0 {
+	if f.Kind != flow.KindTunnel || f.RespBody.Size == 0 || len(f.Tags) != 1 || f.Tags[0] != proxy.ReasonNever {
 		t.Fatalf("tunnel flow: %+v", f)
+	}
+}
+
+func TestOnlyModeTunnelsUnlisted(t *testing.T) {
+	origin := originTLS(t, false, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "ok") })
+	e := start(t, func(o *proxy.Options) {
+		o.Decrypt = proxy.DecryptPolicy{Mode: proxy.DecryptOnly, Only: []string{"api.example"}}
+	})
+	cli, tr := originOnlyClient(e, origin)
+	resp, err := cli.Get(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	tr.CloseIdleConnections()
+	f := e.sink.waitDone(t)
+	if f.Kind != flow.KindTunnel || f.Tags[0] != proxy.ReasonUnlisted {
+		t.Fatalf("expected unlisted tunnel: %+v", f)
+	}
+
+	// Listing the host live switches it to decryption.
+	e.srv.SetDecrypt(proxy.DecryptPolicy{Mode: proxy.DecryptOnly, Only: []string{"127.0.0.1"}})
+	resp, err = e.h1cli.Get(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	f = e.sink.waitDone(t)
+	if f.Kind != flow.KindHTTP || f.Status != 200 {
+		t.Fatalf("expected decrypted http flow: %+v", f)
+	}
+}
+
+func TestOffModeSplicesAll(t *testing.T) {
+	origin := originTLS(t, false, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "ok") })
+	e := start(t, func(o *proxy.Options) { o.Decrypt = proxy.DecryptPolicy{Mode: proxy.DecryptOff} })
+	cli, tr := originOnlyClient(e, origin)
+	resp, err := cli.Get(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	tr.CloseIdleConnections()
+	f := e.sink.waitDone(t)
+	if f.Kind != flow.KindTunnel || f.Tags[0] != proxy.ReasonOff {
+		t.Fatalf("expected off tunnel: %+v", f)
 	}
 }
 
 func TestCertRejectedRecorded(t *testing.T) {
 	origin := originTLS(t, false, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "ok") })
 	e := start(t, nil)
-	tr := &http.Transport{
-		Proxy:           http.ProxyURL(&url.URL{Scheme: "http", Host: e.addr}),
-		TLSClientConfig: &tls.Config{RootCAs: certPoolOf(origin), MinVersion: tls.VersionTLS12},
+	cli, _ := originOnlyClient(e, origin)
+	for i := 0; i < 2; i++ {
+		if _, err := cli.Get(origin.URL); err == nil {
+			t.Fatal("expected TLS failure")
+		}
+		f := e.sink.waitDone(t)
+		if f.State != flow.StateFailed || !strings.Contains(f.Error, "rejected") && !strings.Contains(f.Error, "handshake") {
+			t.Fatalf("flow %+v", f)
+		}
+		if !strings.Contains(f.Error, "pano decrypt never add 127.0.0.1") {
+			t.Fatalf("error should name the fix: %q", f.Error)
+		}
 	}
-	_, err := (&http.Client{Transport: tr}).Get(origin.URL)
-	if err == nil {
-		t.Fatal("expected TLS failure")
+	rej := e.srv.Rejected()
+	if len(rej) != 1 || rej[0].Host != "127.0.0.1" || rej[0].Count != 2 {
+		t.Fatalf("rejected: %+v", rej)
 	}
-	f := e.sink.waitDone(t)
-	if f.State != flow.StateFailed || !strings.Contains(f.Error, "rejected") && !strings.Contains(f.Error, "handshake") {
-		t.Fatalf("flow %+v", f)
+	// Adding the host to never clears the suggestion.
+	e.srv.SetDecrypt(proxy.DecryptPolicy{Mode: proxy.DecryptAll, Never: []string{"127.0.0.1"}})
+	if rej := e.srv.Rejected(); len(rej) != 0 {
+		t.Fatalf("rejected after never: %+v", rej)
 	}
 }
 

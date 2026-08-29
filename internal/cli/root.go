@@ -111,7 +111,7 @@ Quick start:
 	root.AddCommand(
 		app.cmdVersion(), app.cmdStart(), app.cmdStop(), app.cmdStatus(), app.cmdOn(), app.cmdOff(),
 		app.cmdCA(), app.cmdTail(), app.cmdFlows(), app.cmdShow(), app.cmdExplain(), app.cmdDiff(),
-		app.cmdReplay(), app.cmdRules(), app.cmdBP(), app.cmdSession(), app.cmdBypass(),
+		app.cmdReplay(), app.cmdRules(), app.cmdBP(), app.cmdSession(), app.cmdDecrypt(),
 		app.cmdExport(), app.cmdImport(), app.cmdRun(), app.cmdEnv(), app.cmdDoctor(), app.cmdConfig(),
 		app.cmdMCP(), app.cmdUI(), app.cmdDaemon(), app.cmdWatchdog(),
 	)

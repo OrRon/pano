@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	toml "github.com/pelletier/go-toml/v2"
@@ -14,6 +15,7 @@ import (
 // before use; the TOML file only needs to list overrides.
 type Config struct {
 	Proxy       Proxy       `toml:"proxy"`
+	Decrypt     Decrypt     `toml:"decrypt"`
 	Capture     Capture     `toml:"capture"`
 	Retention   Retention   `toml:"retention"`
 	Redaction   Redaction   `toml:"redaction"`
@@ -26,10 +28,21 @@ type Config struct {
 
 // Proxy configures the listening proxy.
 type Proxy struct {
-	Port    int      `toml:"port"`
-	MCPPort int      `toml:"mcp_port"`
-	Bind    string   `toml:"bind"`
-	Bypass  []string `toml:"bypass"`
+	Port    int    `toml:"port"`
+	MCPPort int    `toml:"mcp_port"`
+	Bind    string `toml:"bind"`
+	// Bypass is the pre-[decrypt] name of Decrypt.Never. Load migrates it and
+	// Save never writes it back.
+	Bypass []string `toml:"bypass,omitempty"`
+}
+
+// Decrypt says which HTTPS tunnels are TLS-terminated. Never wins in every
+// mode; Only is consulted only when Mode is "only". Entries are hosts (which
+// also cover their subdomains) or globs.
+type Decrypt struct {
+	Mode  string   `toml:"mode"`
+	Only  []string `toml:"only"`
+	Never []string `toml:"never"`
 }
 
 // Capture configures what is recorded.
@@ -108,18 +121,19 @@ func (d *Duration) UnmarshalText(b []byte) error {
 // MarshalText renders the duration.
 func (d Duration) MarshalText() ([]byte, error) { return []byte(d.String()), nil }
 
-// DefaultBypass lists hosts that are tunneled without decryption because they
-// pin certificates or break under interception (Apple services, pinned SDKs).
-var DefaultBypass = []string{
-	"*.apple.com", "*.icloud.com", "*.icloud-content.com", "*.mzstatic.com",
-	"*.cdn-apple.com", "*.push.apple.com", "*.apple-cloudkit.com", "*.ls.apple.com",
-	"*.crashlytics.com",
+// DefaultNever lists the hosts that are never decrypted out of the box: the
+// macOS daemons that pin certificates and visibly break under interception
+// (push notifications, iCloud sync, CloudKit, Maps). Deliberately minimal —
+// anything else that pins shows up under "rejected" for the user to decide.
+var DefaultNever = []string{
+	"*.push.apple.com", "*.icloud.com", "*.icloud-content.com", "*.apple-cloudkit.com", "*.ls.apple.com",
 }
 
 // Default returns the built-in configuration.
 func Default() Config {
 	return Config{
-		Proxy: Proxy{Port: 9091, MCPPort: 9092, Bind: "127.0.0.1", Bypass: append([]string(nil), DefaultBypass...)},
+		Proxy:   Proxy{Port: 9091, MCPPort: 9092, Bind: "127.0.0.1"},
+		Decrypt: Decrypt{Mode: "all", Only: []string{}, Never: append([]string(nil), DefaultNever...)},
 		Capture: Capture{
 			Enabled: true, MaxBodyBytes: 4 << 20, MaxInflightBytes: 256 << 20,
 			Persist: true, WebSocketFrames: true, RingSize: 10000,
@@ -207,19 +221,43 @@ func (p Paths) Ensure() error {
 }
 
 // Load reads config.toml over Default(). A missing file is not an error.
+// Deprecated keys are migrated in memory (see LoadWithWarnings).
 func Load(p Paths) (Config, error) {
+	cfg, _, err := LoadWithWarnings(p)
+	return cfg, err
+}
+
+// LoadWithWarnings is Load plus one human-readable line per migrated or
+// deprecated key, for the daemon log and `pano config get`.
+func LoadWithWarnings(p Paths) (Config, []string, error) {
 	cfg := Default()
 	b, err := os.ReadFile(p.ConfigFile())
 	if errors.Is(err, os.ErrNotExist) {
-		return cfg, nil
+		return cfg, nil, nil
 	}
 	if err != nil {
-		return cfg, fmt.Errorf("config: read: %w", err)
+		return cfg, nil, fmt.Errorf("config: read: %w", err)
 	}
 	if err := toml.Unmarshal(b, &cfg); err != nil {
-		return cfg, fmt.Errorf("config: parse %s: %w", p.ConfigFile(), err)
+		return cfg, nil, fmt.Errorf("config: parse %s: %w", p.ConfigFile(), err)
 	}
-	return cfg, cfg.Validate()
+	var warnings []string
+	if len(cfg.Proxy.Bypass) > 0 {
+		// Presence check: only migrate when the file has no [decrypt] table,
+		// otherwise the new key is authoritative.
+		var probe struct {
+			Decrypt *struct{} `toml:"decrypt"`
+		}
+		_ = toml.Unmarshal(b, &probe)
+		if probe.Decrypt == nil {
+			cfg.Decrypt.Never = append([]string(nil), cfg.Proxy.Bypass...)
+			warnings = append(warnings, "config: [proxy] bypass is deprecated and was read as [decrypt] never; it will be rewritten on the next save")
+		} else {
+			warnings = append(warnings, "config: [proxy] bypass is ignored because [decrypt] is present; remove it")
+		}
+		cfg.Proxy.Bypass = nil
+	}
+	return cfg, warnings, cfg.Validate()
 }
 
 // Save writes the config atomically.
@@ -241,6 +279,18 @@ func (c Config) Validate() error {
 	}
 	if c.Views.DefaultMaxBytes <= 0 || c.Views.ListPageSize <= 0 {
 		return errors.New("config: views limits must be > 0")
+	}
+	switch c.Decrypt.Mode {
+	case "all", "only", "off":
+	default:
+		return fmt.Errorf("config: decrypt.mode must be all, only or off (got %q)", c.Decrypt.Mode)
+	}
+	for _, list := range [][]string{c.Decrypt.Only, c.Decrypt.Never} {
+		for _, h := range list {
+			if strings.TrimSpace(h) == "" || strings.ContainsAny(h, " \t/") {
+				return fmt.Errorf("config: bad decrypt host entry %q", h)
+			}
+		}
 	}
 	return nil
 }

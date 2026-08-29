@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -73,69 +74,6 @@ func (a *App) cmdSession() *cobra.Command {
 		},
 	}
 	cmd.AddCommand(ls, newc, clear, rm)
-	return cmd
-}
-
-func (a *App) cmdBypass() *cobra.Command {
-	cmd := &cobra.Command{Use: "bypass", Short: "Hosts tunneled without decryption (pinned apps)"}
-	ls := &cobra.Command{
-		Use: "ls", Short: "List bypass globs",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			b, err := a.client().Bypass(cmd.Context())
-			if err != nil {
-				return err
-			}
-			if a.jsonOut {
-				return a.printJSON(b)
-			}
-			for _, g := range b {
-				a.println(g)
-			}
-			return nil
-		},
-	}
-	add := &cobra.Command{
-		Use: "add <glob>...", Short: "Add bypass globs", Args: cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			b, err := a.client().Bypass(cmd.Context())
-			if err != nil {
-				return err
-			}
-			b = append(b, args...)
-			if err := a.client().SetBypass(cmd.Context(), b); err != nil {
-				return err
-			}
-			a.printf("%s bypass: %s\n", a.c(green, "✓"), strings.Join(args, " "))
-			return nil
-		},
-	}
-	rm := &cobra.Command{
-		Use: "rm <glob>...", Short: "Remove bypass globs", Args: cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			b, err := a.client().Bypass(cmd.Context())
-			if err != nil {
-				return err
-			}
-			var out []string
-			for _, g := range b {
-				keep := true
-				for _, r := range args {
-					if r == g {
-						keep = false
-					}
-				}
-				if keep {
-					out = append(out, g)
-				}
-			}
-			if err := a.client().SetBypass(cmd.Context(), out); err != nil {
-				return err
-			}
-			a.printf("%s removed\n", a.c(green, "✓"))
-			return nil
-		},
-	}
-	cmd.AddCommand(ls, add, rm)
 	return cmd
 }
 
@@ -287,11 +225,14 @@ func (a *App) cmdDoctor() *cobra.Command {
 			c := a.client()
 			running := c.Ping(ctx)
 			a.printf("%s daemon running (%s)\n", ok(running), a.sock)
-			cfg, err := config.Load(a.paths)
+			cfg, warnings, err := config.LoadWithWarnings(a.paths)
 			a.printf("%s config %s\n", ok(err == nil), a.paths.ConfigFile())
 			if err != nil {
 				a.printf("     %v\n", err)
 				problems++
+			}
+			for _, w := range warnings {
+				a.printf("%s %s\n", a.c(yellow, "warn"), w)
 			}
 			auth, err := a.loadCA()
 			a.printf("%s CA files %s\n", ok(err == nil), a.paths.CACert())
@@ -322,6 +263,10 @@ func (a *App) cmdDoctor() *cobra.Command {
 					}
 					if st.Dropped > 0 {
 						a.printf("%s %d events dropped by the store\n", a.c(yellow, "warn"), st.Dropped)
+					}
+					a.printf("%s %s\n", ok(true), a.renderDecrypt(st.Decrypt, "     ", time.Now())[5:])
+					if n := len(st.Decrypt.Rejected); n > 0 {
+						a.printf("%s %d host(s) refused pano's certificate in the last hour (pinning?) — see above\n", a.c(yellow, "warn"), n)
 					}
 				}
 			} else {
@@ -364,9 +309,12 @@ func (a *App) cmdConfig() *cobra.Command {
 					return a.printJSON(v)
 				}
 			}
-			cfg, err := config.Load(a.paths)
+			cfg, warnings, err := config.LoadWithWarnings(a.paths)
 			if err != nil {
 				return err
+			}
+			for _, w := range warnings {
+				a.warn("%s", w)
 			}
 			return a.printJSON(cfg)
 		},

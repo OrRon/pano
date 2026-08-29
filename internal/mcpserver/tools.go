@@ -111,6 +111,14 @@ func (s *Server) registerTools() {
 	}, s.toolHAR)
 
 	mcp.AddTool(m, &mcp.Tool{
+		Name: "pano_decrypt",
+		Description: "Which HTTPS hosts pano decrypts. Modes: all (decrypt everything except the never list, default), only (decrypt just the only list), off (tunnel everything: hosts, bytes, timing only). The never list wins in every mode; use it for apps that pin certificates. " +
+			"action=status shows mode, both lists in full and hosts that refused pano's certificate in the last hour (pinning suspects). action=mode sets mode. action=add / action=remove edit list=only|never with hosts (a bare host covers its subdomains; globs like *.example.com work); hosts=[\"@rejected\"] with list=never adds every rejected host. " +
+			"Changes apply immediately, persist to config.toml and are audited. Nothing is ever added automatically.",
+		Annotations: mutating("pano decrypt", true),
+	}, s.toolDecrypt)
+
+	mcp.AddTool(m, &mcp.Tool{
 		Name: "pano_system_proxy",
 		Description: "CHANGES macOS SYSTEM SETTINGS. enabled=true routes ALL of this Mac's HTTP/HTTPS traffic through pano (browsers and most apps); enabled=false restores the previous settings. Only call when the user explicitly asks. confirm must be \"yes\". " +
 			"For a single command prefer telling the user to run `pano run -- <cmd>` instead. CA install is not available over MCP (terminal: pano ca install).",
@@ -241,6 +249,13 @@ type harIn struct {
 	flowsIn
 }
 
+type decryptIn struct {
+	Action string   `json:"action" jsonschema:"status|mode|add|remove"`
+	Mode   string   `json:"mode,omitempty" jsonschema:"all|only|off (for action=mode)"`
+	List   string   `json:"list,omitempty" jsonschema:"only|never (for action=add|remove)"`
+	Hosts  []string `json:"hosts,omitempty" jsonschema:"hosts or globs (for action=add|remove); \"@rejected\" expands to every host that recently refused the certificate (list=never only)"`
+}
+
 type sysProxyIn struct {
 	Enabled bool   `json:"enabled"`
 	Confirm string `json:"confirm" jsonschema:"must be \"yes\""`
@@ -287,10 +302,83 @@ func FormatStatus(st api.Status) string {
 	if st.Dropped > 0 {
 		fmt.Fprintf(&b, "\nWARNING: %d events dropped by the store", st.Dropped)
 	}
-	if len(st.Bypass) > 0 {
-		fmt.Fprintf(&b, "\nbypass (not decrypted): %s", strings.Join(st.Bypass, " "))
+	b.WriteString("\n" + FormatDecrypt(st.Decrypt))
+	return b.String()
+}
+
+// FormatDecrypt renders the decrypt policy with every list in full.
+func FormatDecrypt(d api.Decrypt) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "decrypt: %s", d.Mode)
+	switch d.Mode {
+	case "all":
+		b.WriteString(" (every host except never)")
+	case "only":
+		b.WriteString(" (just the only list)")
+	case "off":
+		b.WriteString(" (nothing is decrypted; tunnels record host, bytes, timing)")
+	}
+	fmt.Fprintf(&b, "\n  only: %s", orNone(d.Only))
+	fmt.Fprintf(&b, "\n  never: %s", orNone(d.Never))
+	if len(d.Rejected) > 0 {
+		parts := make([]string, len(d.Rejected))
+		for i, r := range d.Rejected {
+			parts[i] = fmt.Sprintf("%s ×%d", r.Host, r.Count)
+		}
+		fmt.Fprintf(&b, "\n  rejected recently (client refused pano's certificate — pinning?): %s\n  → pano_decrypt action=add list=never hosts=[\"@rejected\"] if the user wants them left alone", strings.Join(parts, ", "))
 	}
 	return b.String()
+}
+
+func orNone(hosts []string) string {
+	if len(hosts) == 0 {
+		return "(none)"
+	}
+	return strings.Join(hosts, " ")
+}
+
+func (s *Server) toolDecrypt(ctx context.Context, _ *mcp.CallToolRequest, in decryptIn) (*mcp.CallToolResult, any, error) {
+	var (
+		d   api.Decrypt
+		err error
+	)
+	switch in.Action {
+	case "status", "":
+		d, err = s.c.Decrypt(ctx)
+	case "mode":
+		if in.Mode == "" {
+			return errResult(fmt.Errorf("action=mode needs mode=all|only|off"), "")
+		}
+		d, err = s.c.ChangeDecrypt(ctx, api.DecryptChange{Mode: in.Mode, Source: "mcp"})
+	case "add", "remove":
+		if len(in.Hosts) == 0 {
+			return errResult(fmt.Errorf("action=%s needs hosts", in.Action), "")
+		}
+		ch := api.DecryptChange{Source: "mcp"}
+		switch {
+		case in.List == "only" && in.Action == "add":
+			ch.AddOnly = in.Hosts
+		case in.List == "only":
+			ch.RemoveOnly = in.Hosts
+		case in.List == "never" && in.Action == "add":
+			ch.AddNever = in.Hosts
+		case in.List == "never":
+			ch.RemoveNever = in.Hosts
+		default:
+			return errResult(fmt.Errorf("action=%s needs list=only|never", in.Action), "")
+		}
+		d, err = s.c.ChangeDecrypt(ctx, ch)
+	default:
+		return errResult(fmt.Errorf("unknown action %q (status|mode|add|remove)", in.Action), "")
+	}
+	if err != nil {
+		return errResult(err, "pano_decrypt action=status")
+	}
+	next := "pano_flows kind=tunnel has_error=true to see what is not being decrypted"
+	if in.Action != "status" && in.Action != "" {
+		next = "pano_tail since=now to watch the effect (open tunnels keep their old policy)"
+	}
+	return ok(withNext(FormatDecrypt(d), next))
 }
 
 func (s *Server) toolCapture(ctx context.Context, _ *mcp.CallToolRequest, in captureIn) (*mcp.CallToolResult, any, error) {

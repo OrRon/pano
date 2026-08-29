@@ -42,8 +42,13 @@ changing boundaries.
   write-behind with a drop policy; dropped counts are surfaced, never hidden.
 - **Bodies are stored as raw wire bytes** (`Content-Encoding` preserved);
   decoding is lazy (`view.Decode`).
-- **Tunnels (bypassed CONNECTs) stay visible in lists**, like every other
+- **Tunnels (undecrypted CONNECTs) stay visible in lists**, like every other
   proxy. Filter with `kind=http`; do not hide them by default.
+- **The `never` list wins over every decrypt mode**, and hosts that reject
+  pano's certificate are *suggested*, never added automatically
+  (`proxy.DecryptPolicy.Decide`, ADR 0007).
+- **Host lists are printed in full everywhere** (`pano status`, `pano doctor`,
+  `pano_status`, TUI): every entry, no counts, no `…` — wrap instead.
 - **Streaming responses are flushed per read** (SSE/LLM tokens must arrive
   live) — see `proxy.isStreamy`.
 - **Replay goes through the proxy itself** using internal headers

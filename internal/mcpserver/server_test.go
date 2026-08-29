@@ -32,8 +32,8 @@ func TestNewRegistersEverything(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools.Tools) != 15 {
-		t.Fatalf("got %d tools, want 15", len(tools.Tools))
+	if len(tools.Tools) != 16 {
+		t.Fatalf("got %d tools, want 16", len(tools.Tools))
 	}
 	for _, tl := range tools.Tools {
 		if len(tl.Description) > 2000 {

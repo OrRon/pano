@@ -136,8 +136,8 @@ func (s *Server) routes() {
 	m.HandleFunc("DELETE /v1/rules", s.hRemoveAllRules)
 	m.HandleFunc("GET /v1/held", s.hHeld)
 	m.HandleFunc("POST /v1/held/{id}", s.hResume)
-	m.HandleFunc("GET /v1/bypass", s.hBypass)
-	m.HandleFunc("PUT /v1/bypass", s.hSetBypass)
+	m.HandleFunc("GET /v1/decrypt", s.hDecrypt)
+	m.HandleFunc("PATCH /v1/decrypt", s.hChangeDecrypt)
 	m.HandleFunc("POST /v1/har", s.hHAR)
 	m.HandleFunc("GET /v1/ca.pem", s.hCA)
 	m.HandleFunc("GET /v1/sysproxy", s.hSysProxy)
@@ -553,21 +553,47 @@ func (s *Server) hResume(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"id": id, "action": req.Action})
 }
 
-func (s *Server) hBypass(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, s.b.Bypass(r.Context()))
+func (s *Server) hDecrypt(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.b.Decrypt(r.Context()))
 }
 
-func (s *Server) hSetBypass(w http.ResponseWriter, r *http.Request) {
-	var globs []string
-	if err := readJSON(r, &globs); err != nil {
+func (s *Server) hChangeDecrypt(w http.ResponseWriter, r *http.Request) {
+	var c api.DecryptChange
+	if err := readJSON(r, &c); err != nil {
 		fail(w, err)
 		return
 	}
-	if err := s.b.SetBypass(r.Context(), globs); err != nil {
+	d, err := s.b.ChangeDecrypt(r.Context(), c)
+	if err != nil {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, globs)
+	s.b.Audit(auditDecrypt(c, d))
+	writeJSON(w, d)
+}
+
+// auditDecrypt renders one audit line for a decrypt change: the source, what
+// was asked, and the resulting mode.
+func auditDecrypt(c api.DecryptChange, d api.Decrypt) string {
+	src := c.Source
+	if src == "" {
+		src = "unknown"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "decrypt source=%s", src)
+	if c.Mode != "" {
+		fmt.Fprintf(&b, " mode=%s", c.Mode)
+	}
+	for _, p := range []struct {
+		sign, list string
+		hosts      []string
+	}{{"+", "only", c.AddOnly}, {"-", "only", c.RemoveOnly}, {"+", "never", c.AddNever}, {"-", "never", c.RemoveNever}} {
+		for _, h := range p.hosts {
+			fmt.Fprintf(&b, " %s%s=%s", p.sign, p.list, h)
+		}
+	}
+	fmt.Fprintf(&b, " now=%s", d.Mode)
+	return b.String()
 }
 
 func (s *Server) hHAR(w http.ResponseWriter, r *http.Request) {

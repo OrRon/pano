@@ -5,17 +5,20 @@ the keys you change and may be absent. `pano config init` writes a complete
 file with defaults, `pano config edit` opens it in `$EDITOR`, `pano config
 get` prints the effective configuration (from the running daemon when there
 is one). The daemon reads the file at start; restart it (`pano stop && pano
-start`) after editing, except for `bypass`, which `pano bypass add/rm` updates
-live and writes back.
+start`) after editing, except for `[decrypt]`, which `pano decrypt …`,
+`pano_decrypt` and the TUI update live and write back.
 
 ```toml
 [proxy]
 port = 9091
 mcp_port = 9092
 bind = "127.0.0.1"
-bypass = ["*.apple.com", "*.icloud.com", "*.icloud-content.com", "*.mzstatic.com",
-          "*.cdn-apple.com", "*.push.apple.com", "*.apple-cloudkit.com",
-          "*.ls.apple.com", "*.crashlytics.com"]
+
+[decrypt]
+mode = "all"          # all | only | off
+only = []             # decrypted when mode = "only"
+never = ["*.push.apple.com", "*.icloud.com", "*.icloud-content.com",
+         "*.apple-cloudkit.com", "*.ls.apple.com"]   # never decrypted, in every mode
 
 [capture]
 enabled = true
@@ -65,7 +68,25 @@ days (`7d`, `0.5d`).
 | `port` | int | `9091` | proxy listen port (1–65535). Override per run with `pano start --port`. |
 | `mcp_port` | int | `9092` | loopback port for the Streamable HTTP MCP endpoint (`/mcp`). `pano start --mcp-port`. |
 | `bind` | string | `"127.0.0.1"` | bind address for the proxy and MCP HTTP listeners. Keep it loopback; nothing authenticates remote clients. `pano start --bind`. |
-| `bypass` | []string | Apple/Crashlytics globs above | host globs tunneled without decryption (recorded as `kind=tunnel`, tag `bypass`). Managed live by `pano bypass`. |
+| `bypass` | []string | — | **deprecated** → `[decrypt] never`. Read once with a warning when no `[decrypt]` table exists, ignored otherwise, never written back. |
+
+### `[decrypt]`
+
+Which HTTPS tunnels are TLS-terminated. Managed live by `pano decrypt`,
+`pano_decrypt` and the TUI (`D`); every change is written back here and to
+`audit.log`. See [ADR 0007](adr/0007-decrypt-policy.md).
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `mode` | string | `"all"` | `all` decrypts every host except `never`; `only` decrypts just `only`; `off` decrypts nothing (tunnels record host, bytes, timing). |
+| `only` | []string | `[]` | hosts decrypted when `mode = "only"`. |
+| `never` | []string | the five Apple globs above | never decrypted, in every mode (pinned apps). Recorded as `kind=tunnel`, tag `never`; `unlisted`/`off` tag the other two reasons. |
+
+Entries are hosts or globs. A bare host covers its subdomains
+(`whatsapp.net` matches `mmg.whatsapp.net`); `*` and `?` are wildcards
+(`*.example.com` does **not** match `example.com`). Entries are lowercased
+and lose a trailing dot or `:port`; empty entries or anything with a space
+or `/` fail validation.
 
 ### `[capture]`
 
@@ -148,11 +169,11 @@ back into pano).
 
 ```
 ~/.pano/                 0700
-├── config.toml          this file (0600; written by `pano config init/edit` and `pano bypass`)
+├── config.toml          this file (0600; written by `pano config init/edit` and every decrypt change)
 ├── pano.sock            control API Unix socket (0600; $TMPDIR/pano-<uid>.sock if the path exceeds ~100 bytes)
 ├── daemon.pid           pid of the detached daemon
 ├── daemon.log           daemon + watchdog log (rotated to daemon.log.1 at 20 MiB on start)
-├── audit.log            reveal_secrets uses and system-proxy toggles, one line each
+├── audit.log            reveal_secrets uses, system-proxy toggles and decrypt changes (with source cli/mcp/tui), one line each
 ├── ca.pem               root certificate (0644; valid 2 years, regenerated when expired; the only file you ever hand to other software)
 ├── ca.key               root private key (0600; generated per user on first run; refused if group/world readable)
 ├── leaf.key             shared private key of all minted leaf certificates (0600)

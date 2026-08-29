@@ -68,6 +68,7 @@ truncates longer instructions):
 > To test an app under bad conditions use pano_rule_add presets (slow_network, fail_rate, offline_host, timeout, rate_limit, hold) with ttl_s so they expire; remove rules when done.
 > pano_tail polls for new flows with a cursor — loop it while a user reproduces something.
 > Secrets (API keys, cookies, bearer tokens) are redacted by default; pass reveal_secrets=true only when the user needs the actual value.
+> pano_decrypt controls which HTTPS hosts are decrypted (mode all|only|off plus only/never lists); hosts that refuse pano's certificate show up in pano_status as "rejected" — add them to never if the user wants that app left alone, never silently.
 > pano_system_proxy CHANGES macOS SYSTEM SETTINGS — only call it when the user explicitly asks. Installing the CA is terminal-only (pano ca install).
 > pano only runs while the user has it on: if a tool answers "pano is off", ask the user to run pano on in a terminal, then retry — you cannot start it yourself.
 > Flow ids are short strings like "f8k2q"; every result ends with a next: hint.
@@ -83,7 +84,7 @@ Annotations: **RO** = `readOnlyHint: true, openWorldHint: false`;
 
 | Tool | Purpose | Key inputs (defaults) | Output | Annotations |
 |---|---|---|---|---|
-| `pano_status` | Daemon state. Call first. | none | version, pid, uptime, proxy addr, MCP HTTP addr, system proxy on?, CA trusted?, capturing, session, flow counts + last id, rules/held/conns, redaction, bypass list, dropped-events warning | RO, alwaysLoad |
+| `pano_status` | Daemon state. Call first. | none | version, pid, uptime, proxy addr, MCP HTTP addr, system proxy on?, CA trusted?, capturing, session, flow counts + last id, rules/held/conns, redaction, the full decrypt policy (mode, `only`, `never`, rejected hosts), dropped-events warning | RO, alwaysLoad |
 | `pano_capture` | Control recording (does not touch system settings). | `action` = `start`\|`stop`\|`clear`\|`session`; `name` (required for `session`) | `capture <action> → capturing=… session=… flows=…` | M, idempotent |
 | `pano_flows` | List / search flows, newest first, one line each. | filters: `q`, `host` (glob), `path` (prefix/glob), `method[]`, `status` (`500`, `4xx`, `400-499`, `!2xx`), `since` (`15m`, `2h`, RFC3339, flow id), `until`, `content_type` (`json\|sse\|html\|js\|css\|img\|bin\|text` or MIME prefix), `min_bytes`, `has_error`, `tag`, `rule`, `state` (`all\|held\|active\|done\|failed\|replayed\|mocked\|blocked`), `kind` (`http\|websocket\|tunnel`), `limit` (50, max 200), `cursor` | fixed-column table `id time meth host path st dur up down type flags`, footer `N of M flows · cursor=…`, `next:` pointing at the newest row | RO, alwaysLoad |
 | `pano_flow` | Inspect one flow. | `id`; `part` (`both`); `view` (`summary`; `schema`, `truncated`, `pretty`, `raw`); `path` (gjson/JSONPath into a JSON body); `max_bytes` (4096, cap 1 MiB); `headers` (true); `reveal_secrets` (false, audited) | status line, `error:`/`rules:`/`timing:` lines, then `== request ==` / `== response ==` with headers and a rendered body that starts with a `body:` header line | RO, alwaysLoad, 200k |
@@ -97,6 +98,7 @@ Annotations: **RO** = `readOnlyHint: true, openWorldHint: false`;
 | `pano_rule_remove` | Remove one rule or all. | `id` or `all=true` | `removed <id>` / `removed N rules` | M, idempotent |
 | `pano_breakpoint_resume` | Release or drop a held exchange. | `id`; `action` (`resume`\|`drop`); edits: `url`, `method`, `set_headers{}`, `remove_headers[]`, `body`, `body_patch{}`, `status` (response phase) | `resume <id>` / `drop <id>`; `next: pano_flow id=…` | M, not idempotent |
 | `pano_har` | Export or import HAR 1.2. | `action` (`export`\|`import`); `path` (absolute); `reveal_secrets` (false); filters as `pano_flows` (export) | `export N flows (bytes) path` — never the file contents | M, 200k |
+| `pano_decrypt` | Which HTTPS hosts are decrypted. | `action` = `status`\|`mode`\|`add`\|`remove`; `mode` (`all`\|`only`\|`off`); `list` (`only`\|`never`); `hosts[]` (bare host covers subdomains; globs; `"@rejected"` with `list=never` adds every host that recently refused the certificate) | `decrypt: <mode>` then `only:` / `never:` with every entry, and `rejected recently (…): host ×N` with the `@rejected` hint when present | M, idempotent |
 | `pano_system_proxy` | **Changes macOS system settings.** | `enabled`; `confirm` must be `"yes"` | `system proxy enabled=… set_by_pano=… <detail>` | `destructiveHint: true, openWorldHint: true` |
 
 Export only covers flows currently in the in-memory ring (the last 10 000
@@ -264,6 +266,11 @@ and appends `reveal_secrets flow=<id>` / `reveal_secrets har=<path>` to
   without `confirm: "yes"`, is annotated `destructiveHint`, and every toggle
   is written to `audit.log`. The description tells the agent to prefer
   `pano run -- <cmd>` for single commands.
+- **`pano_decrypt`** may change the decrypt mode and lists without a
+  confirmation gate: narrowing is always safe, and widening only matters
+  once the user has trusted the CA in a terminal. Every change is written to
+  `audit.log` as `decrypt source=mcp …`, and rejected hosts are only ever
+  suggested — the tool description says so.
 - **CA installation is not exposed over MCP.** The only ways to trust the
   root are `pano ca install` and `pano on` in a terminal.
 - The CA private key is never served by any tool, resource or endpoint;

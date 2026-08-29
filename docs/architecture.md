@@ -69,7 +69,7 @@ the daemon.
 | GET | `/v1/events` | SSE stream of bus events (`types=`, `host=`) |
 | GET/POST | `/v1/rules`, GET `/v1/rules/presets`, PATCH/DELETE `/v1/rules/{id}`, DELETE `/v1/rules` | rules |
 | GET | `/v1/held`, POST `/v1/held/{id}` | breakpoints |
-| GET/PUT | `/v1/bypass` | bypass globs |
+| GET/PATCH | `/v1/decrypt` | decrypt policy: mode, `only`/`never` lists, rejected hosts; PATCH is a partial update (`add_only`, `remove_never`, …, `source`) |
 | POST | `/v1/har` | export / import |
 | GET | `/v1/ca.pem` | root certificate |
 | GET/POST | `/v1/sysproxy` | system proxy state / toggle (`confirm:"yes"`) |
@@ -86,7 +86,10 @@ for why. A client that is configured to use pano as an HTTP proxy sends
 
 ```
 client ──CONNECT host:443──▶ pano: hijack the TCP conn, write "HTTP/1.1 200 Connection Established"
-                              ├─ host matches a bypass glob? → raw TCP splice, recorded as kind=tunnel (never decrypted)
+                              ├─ DecryptPolicy.Decide(host): on the never list → splice, tag "never"
+                              │                              mode off          → splice, tag "off"
+                              │                              mode only, unlisted → splice, tag "unlisted"
+                              │   (raw TCP splice = recorded as kind=tunnel with bytes and timing, never decrypted)
                               └─ else: tls.Server(conn, ca.TLSConfig())
 client ══TLS ClientHello════▶ GetCertificate(SNI, or the CONNECT target when SNI is absent/ECH outer name)
                               mints a leaf for `host` signed by ~/.pano/ca.pem  ◀── TLS session #1 terminates HERE
@@ -117,8 +120,16 @@ Key facts:
   a tiny page and the root certificate.
 - Handshake failures are recorded as flows with `kind=tunnel`,
   `state=failed` and an error such as `client rejected pano certificate
-  (CA not trusted, or the app pins certificates — add host to bypass)`.
+  (CA not trusted, or the app pins certificates — run pano decrypt never add
+  <host>)`. The proxy also counts these per host for an hour
+  (`Server.Rejected`, bounded, in memory); the daemon exposes them as
+  `Decrypt.Rejected` so `pano decrypt`, `pano status`, `pano_status` and the
+  TUI can name the pinning app. They are suggestions only — nothing is ever
+  added to `never` automatically ([ADR 0007](adr/0007-decrypt-policy.md)).
   This is the first thing to look at when a site "does not work".
+- The policy (`proxy.DecryptPolicy`) is an atomic pointer swapped by
+  `PATCH /v1/decrypt`; open tunnels keep the policy they started with. A bare
+  host entry covers its subdomains (`proxy.HostMatch`), globs are exact.
 - A loop guard refuses to proxy to pano's own port; a connection
   semaphore (`[limits] max_conns`) bounds concurrent tunnels.
 

@@ -141,6 +141,7 @@ const (
 	glyphMarked   = "▍"
 	glyphOn       = "●"
 	glyphOff      = "○"
+	glyphHalf     = "◐" // decrypt mode "only": some hosts
 	glyphProxy    = "⇄"
 	glyphOK       = "✓"
 	glyphBad      = "✕"

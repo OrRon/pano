@@ -25,6 +25,14 @@ func sampleModel(w, h int) *Model {
 		Flows: 1318, FlowsTotal: 1318, Rules: 2, RulesEnabled: 1, Held: 1, ActiveConns: 3,
 		CA: api.CAStatus{Trusted: true, Supported: true}, SystemProxy: api.SysProxy{Supported: true, Enabled: true, SetByPano: true, Detail: "Wi-Fi"},
 		Redaction: true,
+		Decrypt: api.Decrypt{
+			Mode: "all", Only: []string{},
+			Never: []string{"*.push.apple.com", "*.icloud.com", "*.icloud-content.com", "*.apple-cloudkit.com", "*.ls.apple.com", "whatsapp.net", "*.bank.example"},
+			Rejected: []api.RejectedHost{
+				{Host: "mmg.whatsapp.net", Count: 14, Last: m.now.Add(-2 * time.Minute), Error: "client closed connection during TLS handshake"},
+				{Host: "media-mrs2-3.cdn.whatsapp.net", Count: 9, Last: m.now.Add(-7 * time.Minute), Error: "client closed connection during TLS handshake"},
+			},
+		},
 	}
 	base := m.now
 	rows := []api.FlowRow{
@@ -38,7 +46,7 @@ func sampleModel(w, h int) *Model {
 		{ID: 1311, Short: "199z", Time: base.Add(-12 * time.Second), Kind: flow.KindHTTP, Method: "PUT", Host: "api.shop.example", Path: "/v2/orders/8813", Status: 0, Duration: "31s", Up: 900, Down: 0, Type: "", Flags: []string{"held"}, State: flow.StateHeld},
 		{ID: 1310, Short: "199y", Time: base.Add(-15 * time.Second), Kind: flow.KindHTTP, Method: "GET", Host: "api.shop.example", Path: "/v2/orders/8813", Status: 502, Duration: "10.0s", Up: 0, Down: 0, Type: "", Flags: []string{"err"}, State: flow.StateFailed, Error: "upstream timeout: dial tcp 10.0.0.9:443: i/o timeout"},
 		{ID: 1309, Short: "199x", Time: base.Add(-18 * time.Second), Kind: flow.KindHTTP, Method: "GET", Host: "cdn.shop.example", Path: "/assets/logo.svg", Status: 200, Duration: "12ms", Up: 0, Down: 4100, Type: "img", State: flow.StateDone},
-		{ID: 1308, Short: "199w", Time: base.Add(-20 * time.Second), Kind: flow.KindTunnel, Method: "", Host: "gateway.icloud.com", Path: "", Status: 0, Duration: "5m12s", Up: 30000, Down: 120000, Type: "tunnel", Flags: []string{"bypass"}, State: flow.StateDone},
+		{ID: 1308, Short: "199w", Time: base.Add(-20 * time.Second), Kind: flow.KindTunnel, Method: "", Host: "gateway.icloud.com", Path: "", Status: 0, Duration: "5m12s", Up: 30000, Down: 120000, Type: "tunnel", Flags: []string{"never"}, State: flow.StateDone},
 		{ID: 1307, Short: "199v", Time: base.Add(-25 * time.Second), Kind: flow.KindHTTP, Method: "DELETE", Host: "api.shop.example", Path: "/v2/cart/items/77", Status: 204, Duration: "88ms", Up: 0, Down: 0, Type: "", State: flow.StateDone},
 		{ID: 1306, Short: "199u", Time: base.Add(-40 * time.Second), Kind: flow.KindHTTP, Method: "POST", Host: "api.openai.com", Path: "/v1/chat/completions", Status: 200, Duration: "4.4s", Up: 2200, Down: 5100, Type: "sse", Flags: []string{"llm", "stream", "replay"}, State: flow.StateDone},
 	}
@@ -186,6 +194,14 @@ func TestSnapshots(t *testing.T) {
 		}},
 		{"rules", func(m *Model) { m.mode = modeRules }},
 		{"held", func(m *Model) { m.mode = modeHeld }},
+		{"decrypt", func(m *Model) { m.mode = modeDecrypt; m.drawerIx = 5 }},
+		{"actions", func(m *Model) { m.mode = modeActions; m.prevMode = modeList; m.cursor = 1 }},
+		{"decrypt-only", func(m *Model) {
+			m.mode = modeList
+			m.status.Decrypt.Mode = "only"
+			m.status.Decrypt.Only = []string{"api.anthropic.com", "localhost"}
+			m.status.Decrypt.Rejected = nil
+		}},
 		{"filter", func(m *Model) {
 			m.mode = modeFilter
 			m.input.SetValue("host=api.stripe.com status=!2xx")

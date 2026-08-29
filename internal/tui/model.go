@@ -23,6 +23,8 @@ const (
 	modeFilter
 	modeRules
 	modeHeld
+	modeDecrypt
+	modeActions
 	modeHelp
 )
 
@@ -72,9 +74,11 @@ type Model struct {
 	vp        viewport.Model
 
 	// Drawers
-	rules    []api.Rule
-	held     []api.Held
-	drawerIx int
+	rules         []api.Rule
+	held          []api.Held
+	drawerIx      int
+	decryptTarget string // list the + input adds to (only|never)
+	actionIx      int    // highlighted item of the actions menu
 
 	sub     *eventSub
 	th      *Theme
@@ -131,6 +135,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.frame%12 == 0 && (m.mode == modeRules || m.mode == modeHeld || len(m.held) > 0) {
 			cmds = append(cmds, fetchRules(m.c))
+		}
+		if m.frame%12 == 0 && m.mode == modeDecrypt {
+			cmds = append(cmds, fetchStatus(m.c))
 		}
 		return m, tea.Batch(cmds...)
 	case statusMsg:
@@ -231,7 +238,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.showToast("✓ " + msg.text)
 		}
-		return m, fetchRules(m.c)
+		return m, tea.Batch(fetchRules(m.c), fetchStatus(m.c))
 	case errMsg:
 		m.err = msg.err
 		return m, nil
@@ -273,7 +280,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.mode = m.prevMode
 		}
 		return m, nil
-	case modeRules, modeHeld:
+	case modeActions:
+		return m.handleActionsKey(key)
+	case modeRules, modeHeld, modeDecrypt:
 		return m.handleDrawerKey(key)
 	case modeDetail:
 		return m.handleDetailKey(k)
@@ -359,6 +368,17 @@ func (m *Model) handleListKey(key string) (tea.Model, tea.Cmd) {
 		m.mode = modeHeld
 		m.drawerIx = 0
 		return m, fetchRules(m.c)
+	case "D":
+		m.prevMode = modeList
+		m.mode = modeDecrypt
+		m.drawerIx = 0
+		return m, fetchStatus(m.c)
+	case "o":
+		return m.openActions(modeList)
+	case "n":
+		if r, ok := m.selected(); ok && r.Kind == flow.KindTunnel {
+			return m, doDecrypt(m.c, api.DecryptChange{AddNever: []string{r.Host}}, "never + "+r.Host)
+		}
 	case "?":
 		m.prevMode = m.mode
 		m.mode = modeHelp
@@ -429,6 +449,12 @@ func (m *Model) handleDetailKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, fetchDiff(m.c, m.marked, r.ID)
 		}
+	case "n":
+		if r, ok := m.selected(); ok && r.Kind == flow.KindTunnel {
+			return m, doDecrypt(m.c, api.DecryptChange{AddNever: []string{r.Host}}, "never + "+r.Host)
+		}
+	case "o":
+		return m.openActions(modeDetail)
 	case "/":
 		m.prevMode = modeDetail
 		m.mode = modeFilter
@@ -458,6 +484,18 @@ func (m *Model) handleFilterKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.input.Placeholder = "host=api.openai.com status=!2xx since=15m  ·  free text searches url/headers"
 			return m.refetchDetail()
 		}
+		if m.prevMode == modeDecrypt {
+			m.mode = modeDecrypt
+			m.input.Placeholder = "host=api.openai.com status=!2xx since=15m  ·  free text searches url/headers"
+			if val == "" {
+				return m, nil
+			}
+			ch := api.DecryptChange{AddOnly: []string{val}}
+			if m.decryptTarget == secNever {
+				ch = api.DecryptChange{AddNever: []string{val}}
+			}
+			return m, doDecrypt(m.c, ch, m.decryptTarget+" + "+val)
+		}
 		m.mode = modeList
 		m.filterRaw = val
 		m.filter = parseFilter(val)
@@ -471,8 +509,13 @@ func (m *Model) handleFilterKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleDrawerKey(key string) (tea.Model, tea.Cmd) {
+	if m.mode == modeDecrypt {
+		if mm, cmd, handled := m.handleDecryptKey(key); handled {
+			return mm, cmd
+		}
+	}
 	switch key {
-	case "esc", "q", "r", "h":
+	case "esc", "q", "r", "h", "D":
 		m.mode = modeList
 	case "j", "down":
 		if m.drawerIx < m.drawerLen()-1 {
@@ -483,9 +526,12 @@ func (m *Model) handleDrawerKey(key string) (tea.Model, tea.Cmd) {
 			m.drawerIx--
 		}
 	case "tab":
-		if m.mode == modeRules {
+		switch m.mode {
+		case modeRules:
 			m.mode = modeHeld
-		} else {
+		case modeHeld:
+			m.mode = modeDecrypt
+		default:
 			m.mode = modeRules
 		}
 		m.drawerIx = 0
@@ -511,10 +557,14 @@ func (m *Model) handleDrawerKey(key string) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) drawerLen() int {
-	if m.mode == modeHeld {
+	switch m.mode {
+	case modeHeld:
 		return len(m.held)
+	case modeDecrypt:
+		return len(m.decryptItems())
+	default:
+		return len(m.rules)
 	}
-	return len(m.rules)
 }
 
 // --- selection and navigation ---

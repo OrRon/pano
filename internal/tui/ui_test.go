@@ -93,3 +93,103 @@ func TestMascotMoods(t *testing.T) {
 		}
 	}
 }
+
+// TestDecryptDrawerKeys: D opens the Decrypt tab of the drawer, tab cycles
+// rules → held → decrypt, and every list entry is on screen.
+func TestDecryptDrawerKeys(t *testing.T) {
+	m := sampleModel(120, 40)
+	m.mode = modeList
+	mm, _ := m.Update(tea.KeyPressMsg{Code: 'D', Text: "D"})
+	m = mm.(*Model)
+	if m.mode != modeDecrypt {
+		t.Fatalf("D should open the decrypt drawer, mode=%v", m.mode)
+	}
+	got := ansi.Strip(m.View().Content)
+	for _, want := range append([]string{"1 all", "2 only", "3 off", "mmg.whatsapp.net", "×14", "REJECTED CERT"}, m.status.Decrypt.Never...) {
+		if !strings.Contains(got, want) {
+			t.Fatalf("drawer missing %q", want)
+		}
+	}
+	if m.drawerLen() != len(m.status.Decrypt.Never)+len(m.status.Decrypt.Rejected) {
+		t.Fatalf("drawerLen=%d", m.drawerLen())
+	}
+	m.mode = modeRules
+	for _, want := range []mode{modeHeld, modeDecrypt, modeRules} {
+		mm, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+		m = mm.(*Model)
+		if m.mode != want {
+			t.Fatalf("tab cycle: got %v want %v", m.mode, want)
+		}
+	}
+	// + opens the text input targeting the focused section (never here).
+	m.mode, m.drawerIx = modeDecrypt, 0
+	mm, _ = m.Update(tea.KeyPressMsg{Code: '+', Text: "+"})
+	m = mm.(*Model)
+	if m.mode != modeFilter || m.prevMode != modeDecrypt || m.decryptTarget != secNever {
+		t.Fatalf("+ should open input for never: mode=%v target=%q", m.mode, m.decryptTarget)
+	}
+	mm, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if mm.(*Model).mode != modeDecrypt {
+		t.Fatal("esc should return to the decrypt drawer")
+	}
+}
+
+// TestHeaderNamesDecryptState: the header chip names the mode, the only
+// hosts and the first rejected host — never just a count when there is room.
+func TestHeaderNamesDecryptState(t *testing.T) {
+	m := sampleModel(160, 40)
+	m.mode = modeList
+	hdr := ansi.Strip(strings.SplitN(m.View().Content, "\n", 2)[0])
+	if !strings.Contains(hdr, "decrypt all") || !strings.Contains(hdr, "rejected mmg.whatsapp.net +1") {
+		t.Fatalf("header: %q", hdr)
+	}
+	m.status.Decrypt.Mode, m.status.Decrypt.Only = "only", []string{"api.anthropic.com", "localhost"}
+	hdr = ansi.Strip(strings.SplitN(m.View().Content, "\n", 2)[0])
+	if !strings.Contains(hdr, "decrypt only api.anthropic.com localhost") {
+		t.Fatalf("header should name the only hosts: %q", hdr)
+	}
+}
+
+// TestActionsMenu: o opens the per-flow menu, its keys act on the selected
+// host, and esc closes it back to where it came from.
+func TestActionsMenu(t *testing.T) {
+	m := sampleModel(120, 40)
+	m.mode, m.cursor = modeList, 1 // api.openai.com
+	mm, _ := m.Update(tea.KeyPressMsg{Code: 'o', Text: "o"})
+	m = mm.(*Model)
+	if m.mode != modeActions {
+		t.Fatalf("o should open actions, mode=%v", m.mode)
+	}
+	got := ansi.Strip(m.View().Content)
+	for _, want := range []string{"ACTIONS", "decrypt only api.openai.com", "never decrypt api.openai.com", "filter host=api.openai.com", "replay", "decrypt all"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("menu missing %q", want)
+		}
+	}
+	mm, _ = m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	m = mm.(*Model)
+	if m.mode != modeList || m.filterRaw != "host=api.openai.com" {
+		t.Fatalf("/ should filter to the host: mode=%v filter=%q", m.mode, m.filterRaw)
+	}
+	m.mode, m.filterRaw = modeList, ""
+	m.applyFilter()
+	mm, _ = m.Update(tea.KeyPressMsg{Code: 'o', Text: "o"})
+	mm, _ = mm.(*Model).Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if mm.(*Model).mode != modeList {
+		t.Fatal("esc should close the menu")
+	}
+	// Tunnel rows get no replay/mark/explain entries.
+	for i, ix := range m.visible {
+		if m.table.rows[ix].Kind == flow.KindTunnel {
+			m.cursor = i
+			break
+		}
+	}
+	r, _ := m.selected()
+	if r.Kind != flow.KindTunnel {
+		t.Fatal("no tunnel row in sample")
+	}
+	if acts := m.actionsFor(r); len(acts) != 3 {
+		t.Fatalf("tunnel actions: %d", len(acts))
+	}
+}

@@ -10,7 +10,9 @@ thing reading your network traffic is often an AI agent. It exposes everything i
 captures through an [MCP](https://modelcontextprotocol.io) server with
 token-efficient views, and through a CLI for humans.
 
-- **Decrypts HTTPS** with a local CA you control (HTTP/1.1, HTTP/2, WebSocket, SSE).
+- **Decrypts HTTPS** with a local CA you control (HTTP/1.1, HTTP/2, WebSocket, SSE) —
+  all hosts, only the ones you list, or none (`pano decrypt all|only|off`); pinned
+  apps go on a `never` list and pano names the ones that refuse its certificate.
 - **MCP-native**: `pano_flows`, `pano_flow`, `pano_flow_explain`, rules, breakpoints,
   replay, HAR — designed around what an LLM needs, not what a GUI shows.
 - **Token-efficient**: one line per flow, body summaries, inferred JSON shapes,
@@ -117,6 +119,6 @@ Apache-2.0 — see [LICENSE](LICENSE).
 - [docs/cli.md](docs/cli.md) — every command, filter syntax, view modes, `pano run --` environment, exit codes
 - [docs/rules.md](docs/rules.md) — rule schema, actions, phases, presets, breakpoints, recipes
 - [docs/config.md](docs/config.md) — `config.toml` keys and defaults, environment variables, `~/.pano` layout
-- [docs/faq.md](docs/faq.md) — pinning and bypass, Firefox, Apple hosts, ECH, HTTP/3, Linux/Windows, removal, performance, comparison with other proxies
+- [docs/faq.md](docs/faq.md) — pinning and the never list, decrypting only your app, Firefox, Apple hosts, ECH, HTTP/3, Linux/Windows, removal, performance, comparison with other proxies
 - [docs/tui-design.md](docs/tui-design.md) — the visual rules behind `pano ui`
 - [docs/adr/](docs/adr/) — architecture decision records

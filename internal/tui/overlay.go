@@ -16,7 +16,7 @@ func (m *Model) renderDrawer(w, h int) []string {
 	var out []string
 	tabs := func(active string) string {
 		var parts []string
-		for _, n := range []string{"Rules", "Held"} {
+		for _, n := range []string{"Rules", "Held", "Decrypt"} {
 			if n == active {
 				parts = append(parts, t.primary().Underline(true).UnderlineColor(t.Accent).Render(n))
 			} else {
@@ -24,6 +24,12 @@ func (m *Model) renderDrawer(w, h int) []string {
 			}
 		}
 		return " " + strings.Join(parts, "   ")
+	}
+	if m.mode == modeDecrypt {
+		_, st := t.modeStyle(m.status.Decrypt.Mode)
+		out = append(out, t.raised(line(tabs("Decrypt")+"   "+st.Render("mode "+m.status.Decrypt.Mode), w)))
+		out = append(out, m.renderDecryptTab(w, h-1)...)
+		return pad(out, w, h)
 	}
 	if m.mode == modeHeld {
 		out = append(out, t.raised(line(tabs("Held")+"   "+t.faint().Render(fmt.Sprintf("%d waiting", len(m.held))), w)))
@@ -121,8 +127,8 @@ func (m *Model) renderHelp(w, h int) []string {
 	groups := []group{
 		{"navigate", [][2]string{{"j/k ↑/↓", "move"}, {"g/G", "top/bottom"}, {"^d/^u", "half page"}, {"⏎ l", "open flow"}, {"esc h", "back / clear filter"}, {"f", "follow newest"}, {"space", "pause list"}}},
 		{"inspect", [][2]string{{"1-5", "summary/request/response/explain/diff"}, {"⇥", "next tab"}, {"v", "cycle view: summary→schema→pretty→raw"}, {"/", "filter (list) · JSON path (detail)"}, {"x", "explain LLM call"}, {"S", "reveal secrets (audited)"}, {"H", "toggle headers"}}},
-		{"act", [][2]string{{"m", "mark for diff"}, {"d", "diff marked ↔ selected"}, {"R", "replay"}, {"c", "toggle capture"}, {"r", "rules drawer"}, {"h", "held requests"}}},
-		{"drawers", [][2]string{{"⏎", "toggle rule · resume held"}, {"x", "remove rule · drop held"}, {"⇥", "switch rules/held"}}},
+		{"act", [][2]string{{"m", "mark for diff"}, {"d", "diff marked ↔ selected"}, {"R", "replay"}, {"c", "toggle capture"}, {"r", "rules drawer"}, {"h", "held requests"}, {"D", "decrypt drawer"}, {"o", "options for the selected flow: decrypt only/never its host, filter, replay…"}, {"n", "never decrypt this tunnel's host"}}},
+		{"drawers", [][2]string{{"⏎", "toggle rule · resume held · host → only"}, {"x", "remove rule · drop held · remove host"}, {"n", "host → never"}, {"+", "type a host to add"}, {"1/2/3", "decrypt all / only / off"}, {"⇥", "rules → held → decrypt"}}},
 	}
 	var out []string
 	out = append(out, t.raised(line(" "+t.secondary().Bold(true).Render("KEYS")+"   "+t.faint().Render("esc closes"), w)))

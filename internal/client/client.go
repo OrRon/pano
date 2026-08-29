@@ -392,15 +392,16 @@ func (c *Client) Resume(ctx context.Context, id flow.ID, req api.ResumeRequest) 
 	return c.do(ctx, "POST", "/v1/held/"+id.Short(), req, nil)
 }
 
-// Bypass returns the bypass list.
-func (c *Client) Bypass(ctx context.Context) ([]string, error) {
-	var b []string
-	return b, c.do(ctx, "GET", "/v1/bypass", nil, &b)
+// Decrypt returns the decrypt policy and recently rejected hosts.
+func (c *Client) Decrypt(ctx context.Context) (api.Decrypt, error) {
+	var d api.Decrypt
+	return d, c.do(ctx, "GET", "/v1/decrypt", nil, &d)
 }
 
-// SetBypass replaces the bypass list.
-func (c *Client) SetBypass(ctx context.Context, globs []string) error {
-	return c.do(ctx, "PUT", "/v1/bypass", globs, nil)
+// ChangeDecrypt applies a partial update and returns the new policy.
+func (c *Client) ChangeDecrypt(ctx context.Context, ch api.DecryptChange) (api.Decrypt, error) {
+	var d api.Decrypt
+	return d, c.do(ctx, "PATCH", "/v1/decrypt", ch, &d)
 }
 
 // HAR exports or imports.

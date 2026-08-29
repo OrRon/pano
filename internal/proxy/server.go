@@ -17,7 +17,6 @@ import (
 	"golang.org/x/net/http2"
 
 	"github.com/orron/pano/internal/flow"
-	"github.com/orron/pano/internal/glob"
 )
 
 // Sink receives capture output. Implementations must not block for long.
@@ -64,7 +63,7 @@ type Options struct {
 	MaxBody     int64             // per-body capture cap; 0 = 4 MiB
 	MaxInflight int64             // total in-flight capture budget; 0 = 256 MiB
 	MaxConns    int               // concurrent tunnels; 0 = 10000
-	Bypass      []string          // host globs tunneled without decryption
+	Decrypt     DecryptPolicy     // which tunnels are TLS-terminated; zero value = mode all, no lists
 	CaptureWS   bool
 	Session     func() string // current session id
 	IDs         *flow.IDGen
@@ -86,7 +85,8 @@ type Server struct {
 	ids       *flow.IDGen
 	log       *slog.Logger
 	budget    *budget
-	bypass    atomic.Pointer[[]string]
+	policy    atomic.Pointer[DecryptPolicy]
+	rejected  *rejectedRing
 	capturing atomic.Bool
 	active    atomic.Int64
 	sem       chan struct{}
@@ -122,10 +122,13 @@ func New(opts Options) *Server {
 	s := &Server{
 		opts: opts, transport: opts.Transport, sink: opts.Sink, hooks: opts.Hooks,
 		ids: opts.IDs, log: opts.Logger, budget: &budget{limit: opts.MaxInflight},
-		sem: make(chan struct{}, opts.MaxConns),
+		sem: make(chan struct{}, opts.MaxConns), rejected: newRejectedRing(),
 	}
 	s.capturing.Store(true)
-	s.SetBypass(opts.Bypass)
+	if opts.Decrypt.Mode == "" {
+		opts.Decrypt.Mode = DecryptAll
+	}
+	s.SetDecrypt(opts.Decrypt)
 
 	s.front = &http.Server{
 		Addr:              opts.Addr,
@@ -220,21 +223,27 @@ func (s *Server) SetCapturing(on bool) { s.capturing.Store(on) }
 // Capturing reports whether recording is on.
 func (s *Server) Capturing() bool { return s.capturing.Load() }
 
-// SetBypass replaces the bypass list.
-func (s *Server) SetBypass(globs []string) {
-	cp := append([]string(nil), globs...)
-	s.bypass.Store(&cp)
+// SetDecrypt replaces the decrypt policy. Takes effect for the next CONNECT;
+// open tunnels are unaffected. Hosts now covered by the never list are dropped
+// from the rejected-host suggestions.
+func (s *Server) SetDecrypt(p DecryptPolicy) {
+	cp := p.Clone()
+	if cp.Mode == "" {
+		cp.Mode = DecryptAll
+	}
+	s.policy.Store(&cp)
+	s.rejected.forget(cp.Never)
 }
 
-// Bypass returns the bypass list.
-func (s *Server) Bypass() []string { return append([]string(nil), *s.bypass.Load()...) }
+// Decrypt returns a copy of the current policy.
+func (s *Server) Decrypt() DecryptPolicy { return s.policy.Load().Clone() }
+
+// Rejected lists hosts whose clients refused pano's certificate in the last
+// hour, most frequent first — candidates for the never list.
+func (s *Server) Rejected() []RejectedHost { return s.rejected.list() }
 
 // ActiveConns is the number of open tunnels/requests.
 func (s *Server) ActiveConns() int { return int(s.active.Load()) }
-
-func (s *Server) bypassed(host string) bool {
-	return glob.MatchAny(*s.bypass.Load(), host)
-}
 
 // serveFront handles connections on the proxy port: CONNECT tunnels, absolute
 // URI plain-HTTP proxying, and a tiny local site for the CA download.

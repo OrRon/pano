@@ -73,7 +73,7 @@ Columns: narrow `ID TIME METH HOST/PATH ST DUR ⚑`; wide adds `HOST` (right-ali
 
 ## Glyphs (single-cell, no emoji)
 
-`▌` cursor · `▍` marked · `●/○` on/off · `⇄` proxy/tunnel · `✓/✕` ok/error ·
+`▌` cursor · `▍` marked · `●/◐/○` on/partial/off (also decrypt all/only/off) · `⇄` proxy/tunnel · `✓/✕` ok/error ·
 `◆` llm · `≈` stream · `▸` live · `‖` held · `◇` mock · `↻` replay · `⊘` block ·
 `◔` delay · `≋` throttle · `✎` rewrite · `▲/▼` up/down · `⠋…` spinner.
 
@@ -81,7 +81,18 @@ Columns: narrow `ID TIME METH HOST/PATH ST DUR ⚑`; wide adds `HOST` (right-ali
 
 List: `j/k` move · `g/G` top/bottom · `⏎` open · `x` explain · `m` mark · `d` diff ·
 `R` replay · `/` filter · `f` follow · `space` pause list · `c` toggle capture ·
-`r` rules · `h` held · `?` help · `q` quit.
+`r` rules · `h` held · `D` decrypt · `o` options for the selected flow ·
+`n` never-decrypt the selected tunnel's host · `?` help · `q` quit.
+
+Options menu (`o` in the list or detail): every action for that entry with
+its key on screen — `o` decrypt only this host (adds it and switches mode
+to only), `n` never decrypt it (or undo), `/` filter to the host, `R`
+replay, `m` mark, `x` explain. `j/k` + `⏎` also work. The last line names
+the current decrypt state and whether the host is on a list.
+
+Drawer (one drawer, three tabs — `⇥` cycles rules → held → decrypt): `⏎`
+toggle rule / resume held / host → only · `x` remove · `n` host → never ·
+`+` type a host · `1/2/3` decrypt all/only/off · `esc` close.
 
 Detail: `1-5` tabs (Summary/Request/Response/Explain/Diff; the strip shows the
 number next to each name) · `⇥` next tab ·
@@ -93,7 +104,20 @@ status=!2xx since=15m type=json errors=1 state=held` plus bare words for
 full-text search.
 
 The footer hints change with the tab: on Explain they lead with `1/2/3
-summary/request/response`, on Request/Response with `v view · H headers`.
+summary/request/response`, on Request/Response with `v view · H headers`;
+with a tunnel selected the list footer leads with `n never decrypt <host>`.
+
+## Decrypt state is always named
+
+The header carries a decrypt chip painted by meaning — `● decrypt all`
+(ok green), `◐ decrypt only api.anthropic.com localhost` (accent; the hosts
+themselves, shrinking to `·N` only below 120 columns), `○ decrypt off`
+(warn) — and, whenever a client refused pano's certificate in the last hour,
+a red `✕ rejected mmg.whatsapp.net +1` chip. The Decrypt tab lists every
+entry of `only`, `never` and `rejected` one per row (accent / secondary /
+error) and scrolls rather than elides; section headers carry the count on
+the right. Rejected hosts are suggestions: `n` adds one to `never`, nothing
+happens on its own.
 
 ## Mascot
 

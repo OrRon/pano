@@ -39,8 +39,8 @@ type Backend interface {
 	Held(ctx context.Context) []api.Held
 	Resume(ctx context.Context, id flow.ID, req api.ResumeRequest) error
 
-	Bypass(ctx context.Context) []string
-	SetBypass(ctx context.Context, globs []string) error
+	Decrypt(ctx context.Context) api.Decrypt
+	ChangeDecrypt(ctx context.Context, c api.DecryptChange) (api.Decrypt, error)
 
 	HAR(ctx context.Context, req api.HARRequest) (api.HARResult, error)
 	CAPEM(ctx context.Context) []byte

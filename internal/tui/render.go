@@ -149,6 +149,7 @@ func (m *Model) renderHeader(w int) string {
 		} else if st.CA.Supported {
 			parts = append(parts, chip(glyphBad, t.fg(t.Err), "ca untrusted", t.fg(t.Err)))
 		}
+		parts = append(parts, m.renderDecryptChips(w)...)
 		if st.Rules > 0 {
 			lbl := fmt.Sprintf("%d rules", st.Rules)
 			if w >= 160 && st.RulesEnabled != st.Rules {
@@ -219,18 +220,28 @@ func (m *Model) renderFooter(w int) string {
 		case tabRequest, tabResponse:
 			hints = []hint{{"v", "view"}, {"H", "headers"}, {"/", "path"}, {"S", "reveal"}, {"⇥", "tabs"}, {"‹", "back"}, {"x", "explain"}, {"?", "more"}}
 		default:
-			hints = []hint{{"⇥", "tabs"}, {"‹", "back"}, {"2/3", "request/response"}, {"x", "explain"}, {"R", "replay"}, {"m", "mark"}, {"d", "diff"}, {"?", "more"}}
+			hints = []hint{{"⇥", "tabs"}, {"‹", "back"}, {"o", "options"}, {"2/3", "request/response"}, {"x", "explain"}, {"R", "replay"}, {"m", "mark"}, {"d", "diff"}, {"?", "more"}}
+			if r, ok := m.selected(); ok && r.Kind == flow.KindTunnel {
+				hints = []hint{{"n", "never decrypt " + r.Host}, {"‹", "back"}, {"D", "decrypt"}, {"?", "more"}}
+			}
 		}
 	case modeRules:
 		hints = []hint{{"⏎", "toggle"}, {"x", "remove"}, {"⇥", "held"}, {"esc", "close"}}
 	case modeHeld:
-		hints = []hint{{"⏎", "resume"}, {"x", "drop"}, {"⇥", "rules"}, {"esc", "close"}}
+		hints = []hint{{"⏎", "resume"}, {"x", "drop"}, {"⇥", "decrypt"}, {"esc", "close"}}
+	case modeActions:
+		hints = []hint{{"⏎", "run"}, {"j/k", "move"}, {"o", "only"}, {"n", "never"}, {"/", "host filter"}, {"esc", "close"}}
+	case modeDecrypt:
+		hints = []hint{{"1/2/3", "all/only/off"}, {"⏎", "→ only"}, {"n", "→ never"}, {"x", "remove"}, {"+", "add host"}, {"⇥", "rules"}, {"esc", "close"}}
 	case modeFilter:
 		hints = []hint{{"⏎", "apply"}, {"esc", "cancel"}}
 	case modeHelp:
 		hints = []hint{{"esc", "close"}}
 	default:
-		hints = []hint{{"j/k", "move"}, {"⏎", "open"}, {"/", "filter"}, {"x", "explain"}, {"m", "mark"}, {"d", "diff"}, {"R", "replay"}, {"r", "rules"}, {"h", "held"}, {"space", "pause"}, {"?", "help"}}
+		hints = []hint{{"j/k", "move"}, {"⏎", "open"}, {"o", "options"}, {"/", "filter"}, {"x", "explain"}, {"m", "mark"}, {"d", "diff"}, {"R", "replay"}, {"r", "rules"}, {"h", "held"}, {"D", "decrypt"}, {"space", "pause"}, {"?", "help"}}
+		if r, ok := m.selected(); ok && r.Kind == flow.KindTunnel {
+			hints = append([]hint{{"n", "never decrypt " + r.Host}}, hints...)
+		}
 	}
 	var b strings.Builder
 	for i, h := range hints {
@@ -422,8 +433,8 @@ func (m *Model) flagGlyphs(r api.FlowRow, wordy bool) string {
 			add(g, t.fg(t.Warn), f)
 		case "rewrite_body", "set_header", "remove_header", "set_query", "redirect":
 			add(glyphRewrite, t.secondary(), f)
-		case "bypass":
-			add(glyphProxy, t.muted(), "bypass")
+		case "never", "unlisted", "off":
+			add(glyphProxy, t.muted(), f)
 		case "active", "trunc", "tag":
 		default:
 			add(glyphTag, t.secondary(), f)

@@ -82,7 +82,7 @@ func TestFormatRowAndHelpers(t *testing.T) {
 
 func TestRootCommandTree(t *testing.T) {
 	root := New(Hooks{})
-	want := []string{"start", "stop", "status", "on", "off", "ca", "tail", "flows", "show", "explain", "diff", "replay", "rules", "bp", "session", "bypass", "export", "import", "run", "env", "doctor", "config", "mcp", "version"}
+	want := []string{"start", "stop", "status", "on", "off", "ca", "tail", "flows", "show", "explain", "diff", "replay", "rules", "bp", "session", "decrypt", "export", "import", "run", "env", "doctor", "config", "mcp", "version"}
 	have := map[string]bool{}
 	for _, c := range root.Commands() {
 		have[c.Name()] = true
