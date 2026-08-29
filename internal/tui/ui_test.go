@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/orron/pano/internal/api"
 	"github.com/orron/pano/internal/flow"
 )
 
@@ -191,5 +192,96 @@ func TestActionsMenu(t *testing.T) {
 	}
 	if acts := m.actionsFor(r); len(acts) != 3 {
 		t.Fatalf("tunnel actions: %d", len(acts))
+	}
+}
+
+// Leaving a filter must show the whole list again, whatever the daemon has
+// answered so far: the table only merges, and answers to a superseded filter
+// are dropped instead of replacing the rows.
+func TestLeavingFilterKeepsFullList(t *testing.T) {
+	m := sampleModel(120, 40)
+	m.mode = modeList
+	all := len(m.table.rows)
+
+	// Filter to stripe: the daemon answers with only the matching rows.
+	m.setFilter("host=api.stripe.com")
+	cmd := m.reloadFlows()
+	if cmd == nil {
+		t.Fatal("reloadFlows returned no command")
+	}
+	hits := []api.FlowRow{}
+	for _, r := range m.table.rows {
+		if r.Host == "api.stripe.com" {
+			hits = append(hits, r)
+		}
+	}
+	mm, _ := m.Update(flowsMsg{gen: m.flowsGen, filtered: true, list: api.FlowList{Flows: hits}})
+	m = mm.(*Model)
+	if len(m.visible) != len(hits) || len(m.table.rows) != all {
+		t.Fatalf("filtered: visible=%d want %d, table=%d want %d", len(m.visible), len(hits), len(m.table.rows), all)
+	}
+
+	// esc clears the filter: the full list is back before any reload lands.
+	mm, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = mm.(*Model)
+	if m.filterRaw != "" || len(m.visible) != all {
+		t.Fatalf("after esc: filter=%q visible=%d want %d", m.filterRaw, len(m.visible), all)
+	}
+
+	// The stale filtered answer arriving late must not shrink the list.
+	mm, _ = m.Update(flowsMsg{gen: m.flowsGen - 1, filtered: true, list: api.FlowList{Flows: hits[:1]}})
+	m = mm.(*Model)
+	if len(m.visible) != all || m.hits != nil {
+		t.Fatalf("stale answer applied: visible=%d want %d hits=%v", len(m.visible), all, m.hits)
+	}
+
+	// An unfiltered reload capped at fewer rows than the table holds merges
+	// rather than truncating.
+	mm, _ = m.Update(flowsMsg{gen: m.flowsGen, list: api.FlowList{Flows: m.table.rows[:3]}})
+	m = mm.(*Model)
+	if len(m.visible) != all {
+		t.Fatalf("unfiltered reload truncated the list: %d want %d", len(m.visible), all)
+	}
+}
+
+// Rows the daemon returns for a filter are merged in even when they were not
+// loaded yet, rows that only match locally but are not in the answer are
+// hidden, and live arrivals newer than the watermark show on local match.
+func TestFilterHitsAndLiveArrivals(t *testing.T) {
+	m := sampleModel(120, 40)
+	m.mode = modeList
+	m.setFilter("host=api.shop.example tag=checkout")
+	old := api.FlowRow{ID: 900, Short: flow.ID(900).Short(), Time: m.now.Add(-time.Hour), Kind: flow.KindHTTP, Method: "GET", Host: "api.shop.example", Path: "/v2/old", Status: 200, State: flow.StateDone}
+	// The daemon says only 1311 and the old row carry the tag.
+	mm, _ := m.Update(flowsMsg{gen: m.flowsGen, filtered: true, list: api.FlowList{Flows: []api.FlowRow{{ID: 1311, Host: "api.shop.example", Path: "/v2/orders/8813", Method: "PUT", State: flow.StateHeld}, old}}})
+	m = mm.(*Model)
+	ids := map[flow.ID]bool{}
+	for _, ix := range m.visible {
+		ids[m.table.rows[ix].ID] = true
+	}
+	if len(ids) != 2 || !ids[1311] || !ids[900] {
+		t.Fatalf("visible ids = %v, want {1311 900}", ids)
+	}
+	// A live arrival above the watermark matches locally and shows at once.
+	live := &flow.Flow{ID: 1400, Host: "api.shop.example", Method: "GET", Path: "/v2/live", Status: 200, Kind: flow.KindHTTP, State: flow.StateDone}
+	mm, _ = m.Update(eventMsg{ev: flow.Event{Type: flow.EvDone, Flow: live}})
+	m = mm.(*Model)
+	if r, ok := m.selected(); !ok || r.ID != 1400 || len(m.visible) != 3 {
+		t.Fatalf("live arrival not shown under filter: selected=%v visible=%d", r.ID, len(m.visible))
+	}
+}
+
+func TestRowMatcherTimes(t *testing.T) {
+	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
+	rm := compileRowFilter(parseFilter("since=15m until=5m"), now)
+	in := api.FlowRow{ID: 1, Time: now.Add(-10 * time.Minute)}
+	tooOld := api.FlowRow{ID: 2, Time: now.Add(-20 * time.Minute)}
+	tooNew := api.FlowRow{ID: 3, Time: now.Add(-1 * time.Minute)}
+	if !rm.match(in) || rm.match(tooOld) || rm.match(tooNew) {
+		t.Fatalf("since/until: in=%v old=%v new=%v", rm.match(in), rm.match(tooOld), rm.match(tooNew))
+	}
+	byID := compileRowFilter(parseFilter("since="+flow.ID(1318).Short()), now) // "19a6", not a duration
+	if byID.match(api.FlowRow{ID: 1318}) || !byID.match(api.FlowRow{ID: 1319}) {
+		t.Fatal("since=<id> should keep only newer ids")
 	}
 }

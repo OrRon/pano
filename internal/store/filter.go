@@ -229,6 +229,10 @@ func StatusMatcher(spec string) func(int) bool {
 	}
 }
 
+// ParseTime parses an absolute (RFC3339) or relative ("15m", "2d") time
+// spec anchored at now. Exported so the TUI can mirror since/until locally.
+func ParseTime(s string, now time.Time) (time.Time, bool) { return parseTime(s, now) }
+
 func parseTime(s string, now time.Time) (time.Time, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" || s == "now" {

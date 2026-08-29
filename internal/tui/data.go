@@ -15,8 +15,12 @@ import (
 
 // Messages exchanged between commands and the model.
 type (
-	statusMsg  struct{ st api.Status }
-	flowsMsg   struct{ list api.FlowList }
+	statusMsg struct{ st api.Status }
+	flowsMsg  struct {
+		gen      int  // Model.flowsGen at request time; older answers are dropped
+		filtered bool // answered a filtered request: rows are the server's hits
+		list     api.FlowList
+	}
 	eventMsg   struct{ ev flow.Event }
 	eventsDone struct{}
 	detailMsg  struct {
@@ -60,8 +64,9 @@ func fetchStatus(c *client.Client) tea.Cmd {
 	}
 }
 
-// fetchFlows loads the initial page.
-func fetchFlows(c *client.Client, f api.FlowFilter) tea.Cmd {
+// fetchFlows loads one page for f. Callers go through Model.reloadFlows so
+// the answer carries the generation it belongs to.
+func fetchFlows(c *client.Client, f api.FlowFilter, gen int, filtered bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -70,7 +75,7 @@ func fetchFlows(c *client.Client, f api.FlowFilter) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return flowsMsg{list}
+		return flowsMsg{gen: gen, filtered: filtered, list: list}
 	}
 }
 
@@ -231,14 +236,28 @@ func (t *flowTable) reindex() {
 	}
 }
 
-// upsert inserts or replaces a row, keeping newest-first order.
+// merge folds a page from the daemon into the table without marking rows as
+// fresh: a reload is not an arrival. The table only ever grows (bounded by
+// max), so leaving a filter never shows less than what was there before.
+func (t *flowTable) merge(rows []api.FlowRow) {
+	for _, r := range rows {
+		t.put(r, time.Time{})
+	}
+}
+
+// upsert inserts or replaces a live arrival, keeping newest-first order.
 func (t *flowTable) upsert(f *flow.Flow, now time.Time) {
-	row := store.Row(f)
+	t.put(store.Row(f), now)
+}
+
+func (t *flowTable) put(row api.FlowRow, arrived time.Time) {
 	if i, ok := t.byID[row.ID]; ok {
 		t.rows[i] = row
 		return
 	}
-	t.fresh[row.ID] = now
+	if !arrived.IsZero() {
+		t.fresh[row.ID] = arrived
+	}
 	// Insert in ID order (descending). Most arrivals are the newest.
 	pos := sort.Search(len(t.rows), func(i int) bool { return t.rows[i].ID < row.ID })
 	t.rows = append(t.rows, api.FlowRow{})

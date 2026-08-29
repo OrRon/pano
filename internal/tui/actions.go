@@ -62,11 +62,9 @@ func (m *Model) actionsFor(r api.FlowRow) []action {
 			return m, doDecrypt(m.c, ch, "never + "+r.Host)
 		}},
 		{"/", "filter host=" + r.Host, "show only this host's flows", func(m *Model, r api.FlowRow) (tea.Model, tea.Cmd) {
-			m.filterRaw = "host=" + r.Host
-			m.filter = parseFilter(m.filterRaw)
-			m.applyFilter()
+			m.setFilter("host=" + r.Host)
 			m.cursor, m.offset = 0, 0
-			return m, fetchFlows(m.c, m.filter)
+			return m, m.reloadFlows()
 		}},
 	}
 	if r.Kind != flow.KindTunnel {

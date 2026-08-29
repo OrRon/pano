@@ -59,6 +59,10 @@ type Model struct {
 
 	filter    api.FlowFilter
 	filterRaw string
+	matcher   rowMatcher           // filter compiled for local rows
+	hits      map[flow.ID]struct{} // ids the daemon returned for filter; nil until it answers
+	watermark flow.ID              // newest id when the filter was set; newer rows are live arrivals
+	flowsGen  int                  // bumped per reloadFlows; stale answers are dropped
 	input     textinput.Model
 
 	// Detail
@@ -105,7 +109,7 @@ func New(c *client.Client, version string) *Model {
 
 // Init implements tea.Model.
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{fetchStatus(m.c), fetchFlows(m.c, api.FlowFilter{}), fetchRules(m.c), tick(), tea.RequestBackgroundColor}
+	cmds := []tea.Cmd{fetchStatus(m.c), m.reloadFlows(), fetchRules(m.c), tick(), tea.RequestBackgroundColor}
 	if sub, err := openEvents(m.c); err == nil {
 		m.sub = sub
 		cmds = append(cmds, sub.next())
@@ -145,7 +149,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		return m, nil
 	case flowsMsg:
-		m.table.reset(msg.list.Flows)
+		if msg.gen != m.flowsGen {
+			// Answer to a filter that is no longer active (e.g. the slower
+			// full-text query landing after esc cleared it). Dropping it is
+			// what keeps the list from shrinking to a stale subset.
+			return m, nil
+		}
+		m.table.merge(msg.list.Flows)
+		m.hits = nil
+		if msg.filtered {
+			m.hits = make(map[flow.ID]struct{}, len(msg.list.Flows))
+			for _, r := range msg.list.Flows {
+				m.hits[r.ID] = struct{}{}
+			}
+		}
 		m.applyFilter()
 		if m.follow {
 			m.cursor, m.offset = 0, 0
@@ -342,10 +359,8 @@ func (m *Model) handleListKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.input.Focus()
 	case "esc":
 		if m.filterRaw != "" {
-			m.filterRaw = ""
-			m.filter = api.FlowFilter{}
-			m.applyFilter()
-			return m, fetchFlows(m.c, api.FlowFilter{})
+			m.setFilter("")
+			return m, m.reloadFlows()
 		}
 	case "f":
 		m.follow = !m.follow
@@ -497,11 +512,9 @@ func (m *Model) handleFilterKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, doDecrypt(m.c, ch, m.decryptTarget+" + "+val)
 		}
 		m.mode = modeList
-		m.filterRaw = val
-		m.filter = parseFilter(val)
-		m.applyFilter()
+		m.setFilter(val)
 		m.cursor, m.offset = 0, 0
-		return m, fetchFlows(m.c, m.filter)
+		return m, m.reloadFlows()
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(k)
@@ -620,6 +633,31 @@ func (m *Model) keepCursorOn(id flow.ID) {
 	}
 }
 
+// setFilter installs raw as the active filter over the full local table and
+// records the watermark: rows newer than it arrive live and are judged by the
+// local matcher alone; older rows must also be in the daemon's answer once it
+// lands (see applyFilter), which covers criteria the row cannot decide
+// (tag, rule, session, body text). An empty raw clears the filter.
+func (m *Model) setFilter(raw string) {
+	m.filterRaw = strings.TrimSpace(raw)
+	m.filter = parseFilter(m.filterRaw)
+	m.matcher = compileRowFilter(m.filter, time.Now())
+	m.hits = nil
+	m.watermark = 0
+	if len(m.table.rows) > 0 {
+		m.watermark = m.table.rows[0].ID
+	}
+	m.applyFilter()
+}
+
+// reloadFlows asks the daemon for the current filter's page. Every request
+// carries a generation so an answer to an earlier filter is dropped rather
+// than applied over a newer one.
+func (m *Model) reloadFlows() tea.Cmd {
+	m.flowsGen++
+	return fetchFlows(m.c, m.filter, m.flowsGen, m.filterRaw != "")
+}
+
 func (m *Model) applyFilter() {
 	m.visible = m.visible[:0]
 	if m.filterRaw == "" {
@@ -628,12 +666,16 @@ func (m *Model) applyFilter() {
 		}
 		return
 	}
-	// Filters are applied server-side on reload; locally apply the cheap
-	// row-level subset so live arrivals are consistent with the list.
 	for i, r := range m.table.rows {
-		if rowMatches(r, m.filter) {
-			m.visible = append(m.visible, i)
+		if !m.matcher.match(r) {
+			continue
 		}
+		if m.hits != nil && r.ID <= m.watermark {
+			if _, ok := m.hits[r.ID]; !ok {
+				continue
+			}
+		}
+		m.visible = append(m.visible, i)
 	}
 }
 
@@ -834,8 +876,46 @@ func parseFilter(s string) api.FlowFilter {
 	return f
 }
 
-// rowMatches applies the row-level subset of a filter for live arrivals.
-func rowMatches(r api.FlowRow, f api.FlowFilter) bool {
+// rowMatcher is the subset of a FlowFilter a list row can decide on its own;
+// relative times are anchored when the filter is set, like the daemon does.
+type rowMatcher struct {
+	f       api.FlowFilter
+	since   time.Time
+	sinceID flow.ID
+	until   time.Time
+	status  func(int) bool
+}
+
+func compileRowFilter(f api.FlowFilter, now time.Time) rowMatcher {
+	rm := rowMatcher{f: f, status: store.StatusMatcher(f.Status)}
+	if f.Since != "" {
+		if t, ok := store.ParseTime(f.Since, now); ok {
+			rm.since = t
+		} else if id, ok := flow.ParseShort(f.Since); ok {
+			rm.sinceID = id
+		}
+	}
+	if f.Until != "" {
+		if t, ok := store.ParseTime(f.Until, now); ok {
+			rm.until = t
+		}
+	}
+	return rm
+}
+
+// match applies the row-level subset of the filter (used for live arrivals
+// and while the daemon's answer is pending).
+func (rm rowMatcher) match(r api.FlowRow) bool {
+	f := rm.f
+	if rm.sinceID != 0 && r.ID <= rm.sinceID {
+		return false
+	}
+	if !rm.since.IsZero() && r.Time.Before(rm.since) {
+		return false
+	}
+	if !rm.until.IsZero() && r.Time.After(rm.until) {
+		return false
+	}
 	if f.Host != "" && !globMatch(f.Host, hostOnly(r.Host)) {
 		return false
 	}
@@ -853,10 +933,8 @@ func rowMatches(r api.FlowRow, f api.FlowFilter) bool {
 			return false
 		}
 	}
-	if f.Status != "" {
-		if fn := store.StatusMatcher(f.Status); fn != nil && !fn(r.Status) {
-			return false
-		}
+	if rm.status != nil && !rm.status(r.Status) {
+		return false
 	}
 	if f.HasError && r.Error == "" && r.Status < 400 {
 		return false
