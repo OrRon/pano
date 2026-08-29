@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- Quitting the `pano on` window (q or ctrl-c) sat for up to 15 s after the daemon had already stopped: the daemon is a child of that process, so once it exited it lingered as a zombie that still answered `kill(pid, 0)`. The CLI now reaps the daemon it spawned and returns the moment it is gone.
 - Turning pano off took up to 8 s while a browser held a streaming or long-poll request open: shutdown waited for the proxy to drain. It now drains for 0.7 s and then closes the remaining connections (the system proxy is already restored by then, so new connections go direct).
 
 ### Changed

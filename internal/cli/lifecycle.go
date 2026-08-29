@@ -109,7 +109,10 @@ func (a *App) spawnDaemon(ctx context.Context, ov DaemonOverrides) error {
 	if err := c.Start(); err != nil {
 		return fmt.Errorf("start daemon: %w", err)
 	}
-	_ = c.Process.Release()
+	// Keep the handle: if this process later waits for the daemon to stop
+	// (pano on → UI → quit) it must reap it, or the exited daemon lingers
+	// as a zombie that still answers kill(pid, 0).
+	a.child = c.Process
 	deadline := time.Now().Add(6 * time.Second)
 	for time.Now().Before(deadline) {
 		if a.client().Ping(ctx) {
@@ -156,9 +159,23 @@ func (a *App) stopDaemon(ctx context.Context) error {
 	return nil
 }
 
-// waitStopped blocks until the daemon process (pid file) or its socket is
-// gone, or the timeout passes.
+// waitStopped blocks until the daemon is gone, or the timeout passes.
+//
+// If this process spawned the daemon it reaps it with Wait: an exited child
+// nobody has waited for is a zombie, and a zombie still answers
+// kill(pid, 0), so the probe below would spin until the timeout. Otherwise
+// the daemon belongs to another process and the probe is right; the daemon
+// also removes its pid file as the last step of shutdown.
 func (a *App) waitStopped(ctx context.Context, timeout time.Duration) {
+	if a.child != nil {
+		done := make(chan struct{})
+		go func() { _, _ = a.child.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(timeout):
+		}
+		return
+	}
 	c := a.client()
 	pid := 0
 	if b, err := os.ReadFile(a.paths.PIDFile()); err == nil {
@@ -167,6 +184,9 @@ func (a *App) waitStopped(ctx context.Context, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if pid > 0 {
+			if _, err := os.Stat(a.paths.PIDFile()); err != nil && !c.Ping(ctx) {
+				return
+			}
 			if p, err := os.FindProcess(pid); err != nil || p.Signal(syscall.Signal(0)) != nil {
 				return
 			}

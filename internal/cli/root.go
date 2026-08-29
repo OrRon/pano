@@ -53,6 +53,8 @@ type App struct {
 	out     io.Writer
 	errOut  io.Writer
 
+	child *os.Process // daemon spawned by this process, if any (see waitStopped)
+
 	frameWidth int // mascot row clamp override (tests); 0 = detect from stdout
 	color      bool
 }

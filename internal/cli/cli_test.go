@@ -2,7 +2,11 @@ package cli
 
 import (
 	"context"
+	"io"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -177,5 +181,39 @@ func TestRenderLifecycle(t *testing.T) {
 	}
 	if got := a.renderLifecycle(api.Lifecycle{Mode: "background"}); !strings.Contains(got, "pano off") {
 		t.Fatalf("background: %q", got)
+	}
+}
+
+// A daemon spawned by this process becomes a zombie when it exits until it
+// is reaped — and a zombie still answers kill(pid, 0). waitStopped must
+// therefore Wait on its own child rather than probe it, or `pano on` → quit
+// would sit out the whole timeout (Or saw ~15 s after ctrl-c).
+func TestWaitStoppedReapsOwnChild(t *testing.T) {
+	dir := t.TempDir()
+	a := &App{paths: config.Paths{Dir: dir}, out: io.Discard, errOut: io.Discard}
+	cmd := exec.Command("sleep", "0.3")
+	if err := cmd.Start(); err != nil {
+		t.Skip("no sleep:", err)
+	}
+	_ = os.WriteFile(a.paths.PIDFile(), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600)
+
+	// Without the handle the probe sees the zombie for the whole timeout.
+	start := time.Now()
+	a.waitStopped(context.Background(), 1500*time.Millisecond)
+	if took := time.Since(start); took < 1400*time.Millisecond {
+		t.Fatalf("expected the probe to spin on the zombie, returned after %v", took)
+	}
+
+	// With the handle it returns as soon as the child is reaped.
+	cmd = exec.Command("sleep", "0.3")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	a.child = cmd.Process
+	_ = os.WriteFile(a.paths.PIDFile(), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600)
+	start = time.Now()
+	a.waitStopped(context.Background(), 5*time.Second)
+	if took := time.Since(start); took > 1500*time.Millisecond {
+		t.Fatalf("waitStopped took %v with a reaped child; want ~0.3s", took)
 	}
 }
