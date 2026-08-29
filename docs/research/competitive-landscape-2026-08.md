@@ -56,8 +56,8 @@ the end.
 
 ## Where pano is behind
 
-No GUI; macOS-only system integration; no iOS/Android/Docker/JVM
-interceptors (HTTP Toolkit, Proxyman, Charles); no scripting/addon layer
+No GUI; macOS-only system integration; no Docker/JVM interceptors (HTTP
+Toolkit); no scripting/addon layer
 (mitmproxy Python, Proxyman JS, yorishiro Starlark); no gRPC/protobuf decoding;
 no fingerprint-preserving replay; no security tooling; tiny adoption vs.
 36–50k★ browser MCPs.
@@ -72,10 +72,13 @@ query; a single static binary with no account or network dependency.
 
 ## Honest README comparison
 
-- **vs Proxyman MCP** — Proxyman has the GUI, iOS/Android, Windows/Linux,
-  scripting and mature rules; pano is OSS, headless, adds LLM-stream explain,
+- **vs Proxyman MCP** — Proxyman has the GUI, Windows/Linux, scripting and
+  mature rules; pano is OSS, headless, adds LLM-stream explain,
   schema/JSON-path views, delay/fail-rate/throttle rules and `pano run --`. If
-  you want a GUI, use Proxyman.
+  you want a GUI, use Proxyman. Phones: both do iOS/Android; pano's
+  `pano mobile` (2026-08-29) replaces Proxyman's "read the IP off a window,
+  type it in, browse to proxy.man/ssl" with a QR code to a page that works
+  before the proxy is set and turns steps green from real signals.
 - **vs Chrome DevTools / Playwright MCP** — they see only the browser and give
   DOM/console context pano cannot; pano sees every process and mutates traffic
   below the browser. Use both.

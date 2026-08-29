@@ -206,8 +206,19 @@ usage, `next:` hints), plus a CLI for humans, and it lets agents install
 live rules (latency, failure rates, mocks, rewrites, breakpoints) over the
 same API. It persists to SQLite with full-text search, handles HTTP/2,
 WebSocket and SSE, and is pre-1.0 and macOS-first, with a smaller feature
-surface than any of the three (no scripting language, no HAR viewer, no
-mobile-device helpers).
+surface than any of the three (no scripting language, no HAR viewer).
+Phones are covered — `pano mobile` — with a setup page that ticks steps off
+live, rather than an IP to copy off a window (see [mobile.md](mobile.md)).
+
+## Can I see my iPhone / Android traffic?
+
+Yes: `pano mobile` opens the proxy to your Wi-Fi and prints a QR code; the
+phone scans it, gets the proxy settings and the certificate from the page,
+and the page turns each step green as the phone gets there. Devices then
+show in `pano status`, the TUI header and `pano_status`; filter their flows
+with `--client <ip>` / `client=<ip>`. Everything about it, including the
+Android `network_security_config` requirement and the iOS "installed but not
+trusted" state, is in [mobile.md](mobile.md).
 
 ## How do I completely remove pano?
 

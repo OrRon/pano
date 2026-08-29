@@ -229,6 +229,7 @@ func (a *App) renderStatus(st api.Status) {
 		a.printf("  %s secret redaction is OFF\n", a.c(yellow, "!"))
 	}
 	a.printf("%s\n", a.renderDecrypt(st.Decrypt, "  ", time.Now()))
+	a.printf("%s\n", a.renderMobile(st.Mobile, "  ", time.Now()))
 }
 
 func (a *App) cmdOn() *cobra.Command {

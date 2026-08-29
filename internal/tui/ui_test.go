@@ -115,7 +115,7 @@ func TestDecryptDrawerKeys(t *testing.T) {
 		t.Fatalf("drawerLen=%d", m.drawerLen())
 	}
 	m.mode = modeRules
-	for _, want := range []mode{modeHeld, modeDecrypt, modeRules} {
+	for _, want := range []mode{modeHeld, modeDecrypt, modeMobile, modeRules} {
 		mm, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		m = mm.(*Model)
 		if m.mode != want {
@@ -283,5 +283,36 @@ func TestRowMatcherTimes(t *testing.T) {
 	byID := compileRowFilter(parseFilter("since="+flow.ID(1318).Short()), now) // "19a6", not a duration
 	if byID.match(api.FlowRow{ID: 1318}) || !byID.match(api.FlowRow{ID: 1319}) {
 		t.Fatal("since=<id> should keep only newer ids")
+	}
+}
+
+// M opens the Mobile drawer; ⏎ there toggles the listener (a daemon call),
+// esc closes; the drawer cursor walks the devices.
+func TestMobileDrawerKeys(t *testing.T) {
+	m := sampleModel(120, 40)
+	m.mode = modeList
+	mm, _ := m.Update(tea.KeyPressMsg{Code: 'M', Text: "M"})
+	m = mm.(*Model)
+	if m.mode != modeMobile {
+		t.Fatalf("M should open the mobile drawer, mode=%v", m.mode)
+	}
+	if m.drawerLen() != len(m.status.Mobile.Devices) {
+		t.Fatalf("drawerLen=%d", m.drawerLen())
+	}
+	mm, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = mm.(*Model)
+	if cmd == nil {
+		t.Fatal("enter must issue the SetMobile command")
+	}
+	if got := m.renderMobileTab(100, 30); len(got) != 30 || !strings.Contains(strings.Join(got, "\n"), "iPhone") {
+		t.Fatalf("mobile tab: %d rows", len(got))
+	}
+	m.status.Mobile.Enabled, m.status.Mobile.LastAddr = false, "192.168.1.23:9091"
+	if !strings.Contains(strings.Join(m.renderMobileTab(100, 20), "\n"), "may still point at 192.168.1.23:9091") {
+		t.Fatal("off state should warn about the closed address")
+	}
+	mm, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if mm.(*Model).mode != modeList {
+		t.Fatal("esc should close the drawer")
 	}
 }

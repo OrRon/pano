@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en" data-platform="{{.Platform}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#0F0F14" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#FAFAFC" media="(prefers-color-scheme: light)">
+<title>pano · set up this device</title>
+<style>
+:root{
+  --bg:#FAFAFC;--raised:#FFFFFF;--line:#E4E4EC;--fg:#1D1D26;--fg2:#4E4D5A;--muted:#8A8896;
+  --accent:#0B8DB0;--ok:#178A58;--ok-bg:#E4F6ED;--warn:#A86B00;--warn-bg:#FFF4DE;--err:#C93C36;--err-bg:#FCE9E8;
+  --brand-a:#A82ED0;--brand-b:#3F63D8;--shadow:0 1px 2px rgba(20,20,40,.06),0 8px 24px -12px rgba(20,20,40,.18);
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0F0F14;--raised:#1A1A22;--line:#2A2A36;--fg:#E7E5EF;--fg2:#A9A6B6;--muted:#6F6D7B;
+  --accent:#38C8E8;--ok:#3FCF8E;--ok-bg:#12261C;--warn:#F2B544;--warn-bg:#2A2214;--err:#F0605A;--err-bg:#2B1717;
+  --brand-a:#C44CE6;--brand-b:#6C8DF2;--shadow:0 1px 0 rgba(255,255,255,.03) inset,0 12px 32px -16px rgba(0,0,0,.6);
+}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif;
+  padding:max(20px,env(safe-area-inset-top)) 20px max(32px,env(safe-area-inset-bottom));}
+main{max-width:520px;margin:0 auto}
+header{display:flex;align-items:center;gap:14px;margin:8px 0 28px}
+header svg{width:52px;height:34px;flex:none}
+header .name{font-weight:700;font-size:20px;letter-spacing:-.01em}
+header .sub{color:var(--muted);font-size:13px;margin-top:-2px}
+h1{font-size:28px;line-height:1.15;letter-spacing:-.02em;margin:0 0 6px;font-weight:700}
+.lead{color:var(--fg2);margin:0 0 22px}
+.tabs{display:flex;gap:4px;background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:22px}
+.tabs button{flex:1;border:0;background:transparent;color:var(--fg2);font:inherit;font-size:14px;font-weight:600;padding:8px 6px;border-radius:9px;cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--bg);color:var(--fg);box-shadow:var(--shadow)}
+.step{position:relative;background:var(--raised);border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px 62px;margin-bottom:14px;box-shadow:var(--shadow);transition:border-color .3s}
+.step .n{position:absolute;left:18px;top:18px;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:14px;
+  background:var(--line);color:var(--fg2);transition:all .3s}
+.step.done{border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}
+.step.done .n{background:var(--ok);color:#fff}
+.step.done .n::before{content:"✓"}
+.step.done .n span{display:none}
+.step h2{font-size:17px;margin:2px 0 6px;font-weight:650;letter-spacing:-.01em}
+.step p{margin:0 0 10px;color:var(--fg2);font-size:15px}
+.step p:last-child{margin-bottom:0}
+.path{color:var(--fg);font-weight:500}
+.path i{font-style:normal;color:var(--muted);padding:0 3px}
+.kv{display:grid;grid-template-columns:1fr auto;gap:8px;margin:12px 0 10px}
+.kv button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:12px;padding:10px 14px;text-align:left;cursor:pointer;font:inherit;min-width:0}
+.kv button:active{transform:scale(.985)}
+.kv small{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.kv code{font:600 22px/1.2 ui-monospace,"SF Mono",Menlo,monospace;letter-spacing:-.01em;word-break:break-all}
+.kv .hint{font-size:11px;color:var(--accent);height:14px}
+.btn{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--brand-a),var(--brand-b));color:#fff;text-decoration:none;font-weight:650;font-size:15px;padding:12px 18px;border-radius:12px;box-shadow:var(--shadow);margin:6px 0 12px}
+.btn:active{filter:brightness(.92)}
+.btn svg{width:16px;height:16px}
+.pill{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;border-radius:999px;padding:5px 12px 5px 9px;margin-top:8px;background:var(--line);color:var(--fg2)}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.pill.err{background:var(--err-bg);color:var(--err)}
+.dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+.pill:not(.ok):not(.warn):not(.err) .dot{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+.note{font-size:13px;color:var(--muted);margin-top:10px}
+details{margin-top:10px;font-size:14px;color:var(--fg2)}
+summary{cursor:pointer;font-weight:600;color:var(--fg)}
+pre{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;overflow:auto;font:12.5px/1.45 ui-monospace,"SF Mono",Menlo,monospace;color:var(--fg)}
+.done-card{display:none;background:linear-gradient(135deg,color-mix(in srgb,var(--brand-a) 18%,var(--raised)),color-mix(in srgb,var(--brand-b) 18%,var(--raised)));border:1px solid var(--line);border-radius:16px;padding:20px;margin:6px 0 16px;box-shadow:var(--shadow)}
+.done-card h2{margin:0 0 6px;font-size:20px;letter-spacing:-.01em}
+.done-card p{margin:0;color:var(--fg2)}
+body.all-done .done-card{display:block}
+[data-only]{display:none}
+html[data-platform=ios] [data-only~=ios],html[data-platform=android] [data-only~=android],html[data-platform=other] [data-only~=other]{display:revert}
+html[data-platform=ios] .btn[data-only~=ios],html[data-platform=android] .btn[data-only~=android],html[data-platform=other] .btn[data-only~=other]{display:inline-flex}
+footer{color:var(--muted);font-size:12px;margin-top:28px;line-height:1.6}
+footer code{font:11px ui-monospace,"SF Mono",Menlo,monospace;word-break:break-all}
+.off{background:var(--warn-bg);color:var(--warn);border-radius:12px;padding:12px 14px;font-size:14px;margin-bottom:16px}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <svg viewBox="0 0 160 104" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#C44CE6"/><stop offset="1" stop-color="#6C8DF2"/></linearGradient></defs><rect x="2" y="2" width="156" height="100" rx="24" fill="url(#g)"/><g fill="#fff"><animateTransform attributeName="transform" type="translate" values="0 0;0 0;-9 0;-9 0;0 0;0 0;9 0;9 0;0 0" keyTimes="0;0.22;0.25;0.36;0.39;0.62;0.65;0.76;0.79" dur="9s" repeatCount="indefinite"/><ellipse cx="58" cy="52" rx="10" ry="10"><animate attributeName="ry" values="10;10;1;10;10" keyTimes="0;0.92;0.95;0.98;1" dur="4s" repeatCount="indefinite"/></ellipse><ellipse cx="102" cy="52" rx="10" ry="10"><animate attributeName="ry" values="10;10;1;10;10" keyTimes="0;0.92;0.95;0.98;1" dur="4s" repeatCount="indefinite"/></ellipse></g></svg>
+  <div><div class="name">pano</div><div class="sub">on {{.Machine}}</div></div>
+</header>
+
+<h1>Put this device behind pano</h1>
+<p class="lead">Two steps. This page ticks them off as you go.</p>
+
+{{if not .Enabled}}<div class="off">The LAN listener is off — run <b>pano mobile</b> on the Mac first. Until then only this machine can reach the proxy.</div>{{end}}
+
+<div class="tabs" role="tablist">
+  <button role="tab" data-p="ios" aria-selected="false">iPhone &amp; iPad</button>
+  <button role="tab" data-p="android" aria-selected="false">Android</button>
+  <button role="tab" data-p="other" aria-selected="false">Other</button>
+</div>
+
+<div class="done-card">
+  <h2>All set — pano sees this device.</h2>
+  <p>Watch it with <b>pano ui</b> on the Mac, or ask your agent. Filter with <code>client={{"{{ip}}"}}</code>.</p>
+</div>
+
+<section class="step" id="s1">
+  <div class="n"><span>1</span></div>
+  <h2>Point Wi-Fi at pano</h2>
+  <p data-only="ios"><span class="path">Settings <i>›</i> Wi-Fi <i>›</i> ⓘ next to your network <i>›</i> Configure Proxy <i>›</i> Manual</span></p>
+  <p data-only="android"><span class="path">Settings <i>›</i> Wi-Fi <i>›</i> long-press your network <i>›</i> Modify <i>›</i> Advanced <i>›</i> Proxy <i>›</i> Manual</span></p>
+  <p data-only="other">Set this as the HTTP and HTTPS proxy of your device or app.</p>
+  <div class="kv">
+    <button id="ip" data-copy="{{.IP}}"><small>Server</small><code>{{.IP}}</code><span class="hint">tap to copy</span></button>
+    <button id="port" data-copy="{{.Port}}"><small>Port</small><code>{{.Port}}</code><span class="hint">tap to copy</span></button>
+  </div>
+  <p data-only="ios">Leave Authentication off, tap Save, and come back to this page.</p>
+  <p data-only="android">Leave the bypass list as it is, save, and come back to this page.</p>
+  <div class="pill" id="p1"><span class="dot"></span><span>Waiting for the first request through pano…</span></div>
+</section>
+
+<section class="step" id="s2">
+  <div class="n"><span>2</span></div>
+  <h2>Trust pano's certificate</h2>
+  <p>So pano can open HTTPS on this device. It is a certificate made on {{.Machine}} for you alone — remove it when you are done.</p>
+  <a class="btn" data-only="ios" href="/_pano/pano-ca.mobileconfig" download="pano-ca.mobileconfig"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8m0 0 3-3M8 10 5 7M3 13h10"/></svg>Download profile</a>
+  <a class="btn" data-only="android" href="/_pano/pano-ca.crt" download="pano-ca.crt"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8m0 0 3-3M8 10 5 7M3 13h10"/></svg>Download certificate</a>
+  <a class="btn" data-only="other" href="/_pano/pano-ca.pem" download="pano-ca.pem"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8m0 0 3-3M8 10 5 7M3 13h10"/></svg>Download certificate (PEM)</a>
+  <p data-only="ios">Tap <b>Allow</b>, then <span class="path">Settings <i>›</i> Profile Downloaded <i>›</i> Install</span>.</p>
+  <p data-only="ios">Then turn on full trust: <span class="path">Settings <i>›</i> General <i>›</i> About <i>›</i> Certificate Trust Settings <i>›</i> pano CA</span>.</p>
+  <p data-only="android"><span class="path">Settings <i>›</i> Security &amp; privacy <i>›</i> More security <i>›</i> Encryption &amp; credentials <i>›</i> Install a certificate <i>›</i> CA certificate</span> and pick the downloaded <b>pano-ca.crt</b>. (Older Android installs it straight from the download.)</p>
+  <p data-only="other">Add it to the trust store of the OS or app that will use the proxy.</p>
+  <div class="pill" id="p2"><span class="dot"></span><span>Checking whether HTTPS opens…</span></div>
+  <details data-only="android"><summary>Your own Android app doesn't trust it?</summary>
+    <p>Since Android 7, apps only trust user-installed CAs when they opt in. Add this to a debug build:</p>
+<pre>res/xml/network_security_config.xml
+&lt;network-security-config&gt;
+  &lt;debug-overrides&gt;
+    &lt;trust-anchors&gt;
+      &lt;certificates src="user"/&gt;
+      &lt;certificates src="system"/&gt;
+    &lt;/trust-anchors&gt;
+  &lt;/debug-overrides&gt;
+&lt;/network-security-config&gt;
+
+AndroidManifest.xml → &lt;application
+  android:networkSecurityConfig="@xml/network_security_config"&gt;</pre>
+    <p>Debug overrides never apply to release builds.</p>
+  </details>
+  <p class="note" data-only="ios">Apps that pin their certificate will still refuse — that is expected; pano lists them as <i>rejected</i> and you can leave them alone with <b>pano decrypt never</b>.</p>
+</section>
+
+<section class="step" id="s3" style="padding-left:18px">
+  <h2 style="font-size:15px;color:var(--fg2);font-weight:600">When you're done</h2>
+  <p data-only="ios">Turn the proxy off in Wi-Fi settings and remove the profile: <span class="path">Settings <i>›</i> General <i>›</i> VPN &amp; Device Management <i>›</i> pano CA <i>›</i> Remove</span>.</p>
+  <p data-only="android">Turn the proxy off in Wi-Fi settings and remove the certificate: <span class="path">Encryption &amp; credentials <i>›</i> Trusted credentials <i>›</i> User <i>›</i> pano</span>.</p>
+  <p data-only="other">Turn the proxy off and remove the certificate from the trust store.</p>
+</section>
+
+<footer>
+  Also reachable as <b>http://pano.internal</b> from any device already proxied through pano.<br>
+  {{.Subject}} · SHA-256 <code>{{.Fingerprint}}</code><br>
+  pano {{.Version}}
+</footer>
+</main>
+<script>
+(function(){
+  var html=document.documentElement, tabs=document.querySelectorAll('.tabs button');
+  function pick(p){html.setAttribute('data-platform',p);tabs.forEach(function(b){b.setAttribute('aria-selected',String(b.getAttribute('data-p')===p));});}
+  tabs.forEach(function(b){b.addEventListener('click',function(){pick(b.getAttribute('data-p'));});});
+  pick(html.getAttribute('data-platform')||'other');
+
+  // Copy without a secure context: select a hidden field and use execCommand.
+  document.querySelectorAll('[data-copy]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var v=b.getAttribute('data-copy'), ok=false;
+      try{var t=document.createElement('textarea');t.value=v;t.setAttribute('readonly','');t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);
+        t.focus();t.select();t.setSelectionRange(0,v.length);ok=document.execCommand('copy');document.body.removeChild(t);}catch(e){}
+      if(!ok&&navigator.clipboard){navigator.clipboard.writeText(v).then(function(){flash(b,'copied');},function(){});return;}
+      flash(b, ok?'copied':'select and copy');
+    });
+  });
+  function flash(b,msg){var h=b.querySelector('.hint'),old=h.textContent;h.textContent=msg;setTimeout(function(){h.textContent=old;},1400);}
+
+  var s1=document.getElementById('s1'),s2=document.getElementById('s2'),p1=document.getElementById('p1'),p2=document.getElementById('p2');
+  var proxyOK=false,tlsOK=false,probing=false,lastRejected=0;
+  function pill(el,cls,text){el.className='pill'+(cls?' '+cls:'');el.lastElementChild.textContent=text;}
+  function probe(){
+    if(tlsOK||probing)return;probing=true;
+    fetch('https://pano.internal/_pano/ok',{mode:'cors',cache:'no-store'}).then(function(r){probing=false;if(r.ok){setTLS();}},function(){probing=false;});
+  }
+  function setTLS(){tlsOK=true;s2.classList.add('done');pill(p2,'ok','HTTPS opens through pano — certificate trusted');document.body.classList.add('all-done');}
+  function poll(){
+    fetch('/_pano/setup.json',{cache:'no-store'}).then(function(r){return r.json();}).then(function(st){
+      var ipEl=document.querySelector('.done-card code');if(ipEl&&st.ip)ipEl.textContent='client='+st.ip;
+      if(st.proxy&&!proxyOK){proxyOK=true;s1.classList.add('done');pill(p1,'ok','Traffic is flowing through pano'+(st.name?' from '+st.name:''));}
+      if(st.tls&&!tlsOK){setTLS();}
+      if(proxyOK&&!tlsOK){
+        if(st.rejected>lastRejected){lastRejected=st.rejected;pill(p2,'warn','Certificate installed but not trusted yet? Enable full trust (step 2), then this turns green.');}
+        probe();
+      }
+    }).catch(function(){}).then(function(){setTimeout(poll,1500);});
+  }
+  poll();
+})();
+</script>
+</body>
+</html>

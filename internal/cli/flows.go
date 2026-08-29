@@ -31,6 +31,7 @@ func addFilterFlags(cmd *cobra.Command, f *api.FlowFilter) {
 	fl.StringVar(&f.State, "state", "", "all|held|active|done|failed|replayed|mocked|blocked")
 	fl.StringVar(&f.Kind, "kind", "", "http|websocket|tunnel")
 	fl.StringVar(&f.Session, "session", "", "session id")
+	fl.StringVar(&f.Client, "client", "", "client IP (a phone from `pano mobile status`), or 'remote' for every non-loopback client")
 }
 
 func (a *App) cmdFlows() *cobra.Command {

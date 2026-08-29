@@ -31,6 +31,12 @@ That is the feature. It is also the risk. Please understand it before installing
 ## The rest of the surface
 
 - pano binds to `127.0.0.1` only. The control socket `~/.pano/pano.sock` is `0600`.
+- `pano mobile` is the one exception, and it is scoped: it adds a second
+  listener for the **proxy only** on the Mac's LAN address (never `0.0.0.0`,
+  never the control API or MCP), admits private and link-local source
+  addresses only, is terminal-only (no MCP tool can open it), is audited, and
+  ends with `pano mobile off` / `pano off`. The setup page it serves hands out
+  the CA *certificate*, never the key.
 - pano refuses to run as root.
 - The optional Streamable HTTP MCP endpoint (`127.0.0.1:9092/mcp`) is loopback-only with
   DNS-rebinding protection; set `[mcp] expose_http = false` if you only use stdio.

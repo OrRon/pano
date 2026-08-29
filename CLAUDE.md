@@ -54,7 +54,14 @@ changing boundaries.
 - **Replay goes through the proxy itself** using internal headers
   `X-Pano-Replay-Of` / `X-Pano-No-Rules` / `X-Pano-Flow-Id`, which are stripped
   before leaving pano and from captured headers.
-- Loopback binds only; socket 0600; refuse to run as root.
+- Loopback binds only; socket 0600; refuse to run as root. The one
+  exception is `pano mobile` (ADR 0008): an extra listener for the **proxy
+  only**, on the Mac's LAN IP (never `0.0.0.0`), wrapped in
+  `mobile.PrivateOnly`, terminal-only (no MCP tool), audited. Control API
+  and MCP HTTP never leave loopback.
+- **Requests addressed to pano itself are served locally, never forwarded**
+  (self addresses and `pano.internal`, any scheme) and never become flows;
+  `pano.internal` is TLS-terminated whatever the decrypt mode.
 
 ## Gotchas learned the hard way
 

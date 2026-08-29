@@ -48,6 +48,9 @@ type Backend interface {
 	SysProxy(ctx context.Context) api.SysProxy
 	SetSysProxy(ctx context.Context, req api.SysProxyRequest) (api.SysProxy, error)
 
+	Mobile(ctx context.Context) api.Mobile
+	SetMobile(ctx context.Context, req api.MobileRequest) (api.Mobile, error)
+
 	Config(ctx context.Context) any
 	Shutdown(ctx context.Context) error
 	Audit(line string)

@@ -61,6 +61,26 @@ pano run -- curl https://api.github.com/zen
 pano run -- npm test
 ```
 
+## Phones and tablets
+
+```sh
+pano mobile
+```
+
+Prints a QR code. Scan it with an iPhone, iPad or Android device on the same
+Wi-Fi: the page it opens hands over the proxy settings (tap to copy) and the
+certificate in the form the device installs, and turns each step green as the
+phone gets there — first request through pano, first HTTPS connection it
+trusts. Devices then show up in `pano status`, the TUI and `pano_status`;
+filter their traffic with `client=<ip>`. Only the proxy port opens, only to
+private addresses, only until `pano mobile off`. Details, platform notes and
+the Android `network_security_config` caveat: [docs/mobile.md](docs/mobile.md).
+
+Mobile support is **beta** — tested on iPhone; Android, iPad and the odd
+network layout less so. Feedback is very welcome: what worked, what didn't,
+what the page should have said —
+[open an issue](https://github.com/OrRon/pano/issues).
+
 ## How it works
 
 ```
@@ -90,6 +110,30 @@ for, so pano handles its own with care:
 
 Toward origins pano is an ordinary TLS client that verifies real certificates
 against the system roots; it never weakens the upstream side.
+
+### Secrets are redacted unless you ask
+
+Captured traffic is full of API keys, cookies and bearer tokens. Every place
+pano renders a header or body — `pano show`, `pano_flow`, diff, explain, HAR
+export, the TUI — masks them before they leave the daemon:
+
+- Whole headers: `Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`,
+  `X-Auth-Token`, `OpenAI-Organization`, `X-Amz-Security-Token`, … (the
+  Authorization scheme and cookie names stay visible).
+- By shape, anywhere in text: `sk-…`, `sk-ant-…`, `AKIA…`, `AIza…`, `ghp_…`,
+  `xoxb-…`, JWTs, `password` / `secret` / `token` / `api_key`-style JSON and
+  form values, `user:pass@` in URLs.
+- The mask keeps enough to correlate — `sk-ant-…a1b2 hash:9f3c` — so you can
+  still see that two requests used the same key without seeing the key.
+
+Redaction happens server-side, so the CLI, MCP and TUI cannot disagree. The
+one way out is explicit and per call: `reveal_secrets: true` on `pano_flow`
+or `pano_har` (`--reveal` on `pano show` / `pano export har`) returns the
+real values **and appends a line to `~/.pano/audit.log`**. There is no
+"reveal everything" mode. For an agent this means it never sees your keys by
+default, and when it needs one — say, to reproduce a request with curl — it
+has to ask for it, and you can see that it did.
+
 [SECURITY.md](SECURITY.md) has the full list.
 
 ## Performance
@@ -116,6 +160,7 @@ Apache-2.0 — see [LICENSE](LICENSE).
 - [docs/architecture.md](docs/architecture.md) — process topology, where decryption happens, capture pipeline, rules engine, system proxy + watchdog, data layout, package map
 - [docs/mcp.md](docs/mcp.md) — registering the MCP server, tool catalog, escalation ladder, resources, prompts, token budgets, redaction, safety
 - [docs/mcp-protocol.md](docs/mcp-protocol.md) — the wire: process topology, the JSON-RPC handshake as captured, what each tool advertises (`annotations`, `_meta`), off/on states, a measured token-efficient search
+- [docs/mobile.md](docs/mobile.md) — iPhone, iPad and Android behind pano: `pano mobile`, the setup page, `pano.internal`, platform notes, troubleshooting
 - [docs/cli.md](docs/cli.md) — every command, filter syntax, view modes, `pano run --` environment, exit codes
 - [docs/rules.md](docs/rules.md) — rule schema, actions, phases, presets, breakpoints, recipes
 - [docs/config.md](docs/config.md) — `config.toml` keys and defaults, environment variables, `~/.pano` layout

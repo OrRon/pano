@@ -367,15 +367,21 @@ func TestCertRejectedRecorded(t *testing.T) {
 	}
 }
 
+// A request addressed to the proxy itself is served by pano's own site, never
+// forwarded (which would loop); a CONNECT to itself is refused outright.
 func TestSelfLoopGuard(t *testing.T) {
 	e := start(t, nil)
-	resp, err := e.h1cli.Get("http://" + e.addr + "/anything")
+	resp, err := e.h1cli.Get("http://" + e.addr + "/")
 	if err != nil {
 		t.Fatal(err)
 	}
+	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("status %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(b), "pano") {
+		t.Fatalf("self-addressed GET: %d %.80s", resp.StatusCode, b)
+	}
+	if _, err := e.h1cli.Get("https://" + e.addr + "/"); err == nil || !strings.Contains(err.Error(), "Forbidden") {
+		t.Fatalf("CONNECT to self should be refused with 403, got %v", err)
 	}
 }
 

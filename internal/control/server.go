@@ -142,6 +142,8 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /v1/ca.pem", s.hCA)
 	m.HandleFunc("GET /v1/sysproxy", s.hSysProxy)
 	m.HandleFunc("POST /v1/sysproxy", s.hSetSysProxy)
+	m.HandleFunc("GET /v1/mobile", s.hMobile)
+	m.HandleFunc("POST /v1/mobile", s.hSetMobile)
 	m.HandleFunc("GET /v1/config", s.hConfig)
 	m.HandleFunc("POST /v1/shutdown", s.hShutdown)
 	m.HandleFunc("/debug/pprof/", pprof.Index)
@@ -218,7 +220,7 @@ func FilterFromQuery(r *http.Request) api.FlowFilter {
 		Q: q.Get("q"), Host: q.Get("host"), Path: q.Get("path"), Status: q.Get("status"),
 		Since: q.Get("since"), Until: q.Get("until"), ContentType: q.Get("content_type"),
 		HasError: qBool(r, "has_error"), Tag: q.Get("tag"), Rule: q.Get("rule"), State: q.Get("state"),
-		Kind: q.Get("kind"), Session: q.Get("session"), Limit: qInt(r, "limit", 0), Cursor: q.Get("cursor"),
+		Kind: q.Get("kind"), Session: q.Get("session"), Client: q.Get("client"), Limit: qInt(r, "limit", 0), Cursor: q.Get("cursor"),
 	}
 	if v := q.Get("min_bytes"); v != "" {
 		f.MinBytes, _ = strconv.ParseInt(v, 10, 64)
@@ -634,6 +636,25 @@ func (s *Server) hSetSysProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.b.Audit(fmt.Sprintf("sysproxy enabled=%v", req.Enabled))
+	writeJSON(w, st)
+}
+
+func (s *Server) hMobile(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.b.Mobile(r.Context()))
+}
+
+func (s *Server) hSetMobile(w http.ResponseWriter, r *http.Request) {
+	var req api.MobileRequest
+	if err := readJSON(r, &req); err != nil {
+		fail(w, err)
+		return
+	}
+	st, err := s.b.SetMobile(r.Context(), req)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	s.b.Audit(fmt.Sprintf("mobile enabled=%v addr=%s", req.Enabled, st.Addr))
 	writeJSON(w, st)
 }
 

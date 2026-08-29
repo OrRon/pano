@@ -84,9 +84,9 @@ Annotations: **RO** = `readOnlyHint: true, openWorldHint: false`;
 
 | Tool | Purpose | Key inputs (defaults) | Output | Annotations |
 |---|---|---|---|---|
-| `pano_status` | Daemon state. Call first. | none | version, pid, uptime, proxy addr, MCP HTTP addr, system proxy on?, CA trusted?, capturing, session, flow counts + last id, rules/held/conns, redaction, the full decrypt policy (mode, `only`, `never`, rejected hosts), dropped-events warning | RO, alwaysLoad |
+| `pano_status` | Daemon state. Call first. | none | version, pid, uptime, proxy addr, MCP HTTP addr, system proxy on?, CA trusted?, capturing, session, flow counts + last id, rules/held/conns, redaction, the full decrypt policy (mode, `only`, `never`, rejected hosts), the mobile listener (off, or address + every device seen with proxy/https state), dropped-events warning | RO, alwaysLoad |
 | `pano_capture` | Control recording (does not touch system settings). | `action` = `start`\|`stop`\|`clear`\|`session`; `name` (required for `session`) | `capture <action> → capturing=… session=… flows=…` | M, idempotent |
-| `pano_flows` | List / search flows, newest first, one line each. | filters: `q`, `host` (glob), `path` (prefix/glob), `method[]`, `status` (`500`, `4xx`, `400-499`, `!2xx`), `since` (`15m`, `2h`, RFC3339, flow id), `until`, `content_type` (`json\|sse\|html\|js\|css\|img\|bin\|text` or MIME prefix), `min_bytes`, `has_error`, `tag`, `rule`, `state` (`all\|held\|active\|done\|failed\|replayed\|mocked\|blocked`), `kind` (`http\|websocket\|tunnel`), `limit` (50, max 200), `cursor` | fixed-column table `id time meth host path st dur up down type flags`, footer `N of M flows · cursor=…`, `next:` pointing at the newest row | RO, alwaysLoad |
+| `pano_flows` | List / search flows, newest first, one line each. | filters: `q`, `host` (glob), `path` (prefix/glob), `method[]`, `status` (`500`, `4xx`, `400-499`, `!2xx`), `since` (`15m`, `2h`, RFC3339, flow id), `until`, `content_type` (`json\|sse\|html\|js\|css\|img\|bin\|text` or MIME prefix), `min_bytes`, `has_error`, `tag`, `rule`, `state` (`all\|held\|active\|done\|failed\|replayed\|mocked\|blocked`), `kind` (`http\|websocket\|tunnel`), `client` (an IP from `pano_status` devices, or `remote` for every non-loopback client), `limit` (50, max 200), `cursor` | fixed-column table `id time meth host path st dur up down type flags`, footer `N of M flows · cursor=…`, `next:` pointing at the newest row | RO, alwaysLoad |
 | `pano_flow` | Inspect one flow. | `id`; `part` (`both`); `view` (`summary`; `schema`, `truncated`, `pretty`, `raw`); `path` (gjson/JSONPath into a JSON body); `max_bytes` (4096, cap 1 MiB); `headers` (true); `reveal_secrets` (false, audited) | status line, `error:`/`rules:`/`timing:` lines, then `== request ==` / `== response ==` with headers and a rendered body that starts with a `body:` header line | RO, alwaysLoad, 200k |
 | `pano_flow_diff` | Compare two flows. | `a`, `b`; `part` (`response`); `path`; `ignore_headers` (defaults: date, age, etag, x-request-id, cf-ray, set-cookie, content-length, traceparent, x-amzn-trace-id, x-amz-request-id); `max_changes` (50) | `~ status`, `~ url`, header diff, structural JSON body diff (`+`, `-`, `~ path: old → new`) or a text diff | RO |
 | `pano_flow_replay` | Re-send a captured request through the proxy. | `id`; `url`, `method`, `set_headers{}`, `remove_headers[]`, `body`, `body_patch{path: value}`, `follow_rules` (true), `timeout_ms` (30000) | `replayed <id> → new flow <id2>: status, size, duration`, then the response summary; `next: pano_flow_diff a=<id> b=<id2>` | M, not idempotent |
@@ -261,6 +261,10 @@ and appends `reveal_secrets flow=<id>` / `reveal_secrets har=<path>` to
 `~/.pano/audit.log`. Nothing else in the API can un-redact.
 
 ## Safety notes
+
+- Opening the proxy to the network (`pano mobile`) has no MCP tool, on
+  purpose; `pano_status` reports whether it is on and which devices have
+  connected, and the agent can point the user at the command.
 
 - **`pano_system_proxy`** reroutes every application on the Mac. It refuses
   without `confirm: "yes"`, is annotated `destructiveHint`, and every toggle

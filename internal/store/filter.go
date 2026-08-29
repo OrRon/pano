@@ -1,6 +1,7 @@
 package store
 
 import (
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -94,6 +95,9 @@ func (m *Matcher) Match(fl *flow.Flow) bool {
 	if f.Session != "" && fl.Session != f.Session {
 		return false
 	}
+	if f.Client != "" && !MatchClient(f.Client, fl.Client) {
+		return false
+	}
 	if f.State != "" && f.State != "all" && !matchState(fl, f.State) {
 		return false
 	}
@@ -104,6 +108,20 @@ func (m *Matcher) Match(fl *flow.Flow) bool {
 		return false
 	}
 	return true
+}
+
+// MatchClient compares a filter value with a flow's client address
+// ("ip:port"). "remote" selects every client that is not the machine itself.
+func MatchClient(want, addr string) bool {
+	host := addr
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
+	}
+	if want == "remote" {
+		ip := net.ParseIP(host)
+		return ip != nil && !ip.IsLoopback()
+	}
+	return host == want
 }
 
 func matchPath(pattern, path string) bool {

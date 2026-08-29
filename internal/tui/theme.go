@@ -143,6 +143,7 @@ const (
 	glyphOff      = "○"
 	glyphHalf     = "◐" // decrypt mode "only": some hosts
 	glyphProxy    = "⇄"
+	glyphMobile   = "▯" // a phone: remote client / LAN listener
 	glyphOK       = "✓"
 	glyphBad      = "✕"
 	glyphLLM      = "◆"

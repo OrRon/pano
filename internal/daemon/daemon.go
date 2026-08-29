@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/orron/pano/internal/api"
 	"github.com/orron/pano/internal/bus"
 	"github.com/orron/pano/internal/ca"
 	"github.com/orron/pano/internal/client"
@@ -22,6 +23,7 @@ import (
 	"github.com/orron/pano/internal/control"
 	"github.com/orron/pano/internal/flow"
 	"github.com/orron/pano/internal/mcpserver"
+	"github.com/orron/pano/internal/mobile"
 	"github.com/orron/pano/internal/proxy"
 	"github.com/orron/pano/internal/rules"
 	"github.com/orron/pano/internal/store"
@@ -63,6 +65,12 @@ type Daemon struct {
 	mcp    *mcpserver.Server
 	mcpLn  net.Listener
 	client *client.Client
+	site   *mobile.Site
+
+	mobileMu   sync.Mutex
+	mobileLn   net.Listener // LAN listener while `pano mobile` is on
+	mobileLAN  mobile.LAN
+	mobileLast string // address of the last closed listener
 
 	session   atomic.Value // string
 	cancel    context.CancelFunc
@@ -155,6 +163,18 @@ func build(opts Options) (*Daemon, error) {
 		return nil, err
 	}
 
+	cert, err := mobile.ParseCertificate(d.ca.CertPEM())
+	if err != nil {
+		return nil, err
+	}
+	d.site = mobile.NewSite(mobile.SiteOptions{
+		Cert: cert, Machine: mobile.MachineName(), Version: opts.Version,
+		Mobile: func() api.Mobile { return d.Mobile(context.Background()) },
+		Device: func(addr string) (api.Device, bool) {
+			dev, ok := d.proxy.Device(addr)
+			return apiDevice(dev), ok
+		},
+	})
 	d.proxy = proxy.New(proxy.Options{
 		Addr: net.JoinHostPort(cfg.Proxy.Bind, strconv.Itoa(cfg.Proxy.Port)),
 		TLS:  d.ca.TLSConfig(), Sink: d, Hooks: d.rules,
@@ -162,7 +182,7 @@ func build(opts Options) (*Daemon, error) {
 		Decrypt:   proxy.DecryptPolicy{Mode: proxy.DecryptMode(cfg.Decrypt.Mode), Only: cfg.Decrypt.Only, Never: cfg.Decrypt.Never},
 		CaptureWS: cfg.Capture.WebSocketFrames,
 		Session:   func() string { s, _ := d.session.Load().(string); return s },
-		IDs:       d.ids, Logger: logger, CAPEM: d.ca.CertPEM(),
+		IDs:       d.ids, Logger: logger, CAPEM: d.ca.CertPEM(), Local: d.site,
 	})
 	d.proxy.SetCapturing(cfg.Capture.Enabled)
 	d.sysp = sysproxy.New(d.paths.SysProxyState(), logger)

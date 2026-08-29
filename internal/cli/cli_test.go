@@ -126,6 +126,24 @@ func TestMCPDoesNotStartDaemon(t *testing.T) {
 	}
 }
 
+func TestMobileArgsAndFlags(t *testing.T) {
+	root := New(Hooks{})
+	mobile, _, err := root.Find([]string{"mobile"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mobile.Args(mobile, []string{"on"}); err != nil {
+		t.Fatalf("`pano mobile on` must be accepted: %v", err)
+	}
+	if err := mobile.Args(mobile, []string{"of"}); err == nil {
+		t.Fatal("typos must be rejected")
+	}
+	off, _, err := root.Find([]string{"mobile", "off"})
+	if err != nil || off.Flags().Lookup("keep-daemon") == nil {
+		t.Fatalf("pano mobile off must expose --keep-daemon (err=%v)", err)
+	}
+}
+
 func TestOffHasKeepDaemonFlag(t *testing.T) {
 	root := New(Hooks{})
 	off, _, err := root.Find([]string{"off"})

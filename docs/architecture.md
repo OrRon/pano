@@ -24,13 +24,25 @@ the daemon.
                                    │   pano daemon (panod)   │
                                    │  control API  /v1/*     │
                                    │  proxy  127.0.0.1:9091  │──▶ origins
+                                   │    + <lan-ip>:9091 while `pano mobile` is on
                                    │  store  ~/.pano/pano.db │
                                    │  rules  ~/.pano/rules.json
                                    │  sysproxy snapshot      │
                                    └─────────────────────────┘
                                               ▲
   browsers / apps ── CONNECT / absolute-URI ───┘   (pano on, or pano run --)
+  phones on the Wi-Fi ── same, via the LAN listener  (pano mobile)
 ```
+
+- Requests addressed to pano itself — a plain request on a proxy port, an
+  absolute-URI request for one of its own addresses, or anything for
+  `pano.internal` over http or https — are answered by the daemon's own site
+  (`internal/mobile`): the device setup page, its status JSON, the CA as a
+  profile / DER / PEM. They never become flows. `pano.internal` is terminated
+  whatever the decrypt mode, which is how a phone proves it trusts the CA.
+  The proxy also keeps a small table of remote clients (IP → name from
+  User-Agent, requests, accepted / refused handshakes) that `pano mobile`,
+  `pano status` and `pano_status` list; see [mobile.md](mobile.md).
 
 - `pano start` execs a detached `pano daemon` (own session, stdout/stderr to
   `~/.pano/daemon.log`, pid in `~/.pano/daemon.pid`) and waits up to 6 s for

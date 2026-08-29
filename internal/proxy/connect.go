@@ -23,7 +23,8 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if _, _, err := net.SplitHostPort(target); err != nil {
 		target = net.JoinHostPort(target, "443")
 	}
-	if s.isSelf(target) {
+	magic := isMagic(target)
+	if !magic && s.isSelf(target) {
 		http.Error(w, "pano: refusing to proxy to itself", http.StatusForbidden)
 		return
 	}
@@ -52,20 +53,30 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	raw := newMITMConn(conn, brw.Reader, target)
 
-	if decrypt, reason := s.policy.Load().Decide(host); !decrypt {
+	if decrypt, reason := s.policy.Load().Decide(host); !decrypt && !magic {
 		s.splice(raw, target, client, reason)
 		return
 	}
 	if s.opts.TLS == nil {
+		if magic {
+			return // nothing to terminate the tunnel with
+		}
 		s.splice(raw, target, client, ReasonOff)
 		return
 	}
 
+	// pano.internal is always terminated, whatever the decrypt mode: it is
+	// pano's own site, and reaching it over https is how a phone proves it
+	// trusts the certificate.
 	tlsConn := tls.Server(raw, s.opts.TLS)
 	hctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	err = tlsConn.HandshakeContext(hctx)
 	cancel()
+	s.noteHandshake(client, err == nil)
 	if err != nil {
+		if magic {
+			return // the setup page reports this itself; no flow for our own host
+		}
 		s.recordHandshakeFailure(target, client, err)
 		return
 	}

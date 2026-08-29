@@ -70,6 +70,11 @@ type Options struct {
 	Logger      *slog.Logger
 	CAPEM       []byte // served at /_pano/ca.pem on the proxy port
 	DisableH2   bool
+	// Local, if set, serves requests addressed to pano itself: a plain
+	// request on a proxy port, an absolute-URI request for one of pano's own
+	// addresses, and anything for MagicHost over http or https. It replaces
+	// the built-in one-page site (which only offers the CA).
+	Local http.Handler
 }
 
 // Server is the proxy.
@@ -90,10 +95,13 @@ type Server struct {
 	capturing atomic.Bool
 	active    atomic.Int64
 	sem       chan struct{}
+	devices   *deviceTable
 	listener  net.Listener
 	port      int
 	mu        sync.Mutex
 	closed    bool
+	extra     map[net.Listener]struct{} // additional (LAN) listeners, see AddListener
+	selfIPs   map[string]int            // ip → port of every extra listener, for isSelf
 }
 
 // New creates a server (not yet listening).
@@ -122,7 +130,8 @@ func New(opts Options) *Server {
 	s := &Server{
 		opts: opts, transport: opts.Transport, sink: opts.Sink, hooks: opts.Hooks,
 		ids: opts.IDs, log: opts.Logger, budget: &budget{limit: opts.MaxInflight},
-		sem: make(chan struct{}, opts.MaxConns), rejected: newRejectedRing(),
+		sem: make(chan struct{}, opts.MaxConns), rejected: newRejectedRing(), devices: newDeviceTable(),
+		extra: make(map[net.Listener]struct{}), selfIPs: make(map[string]int),
 	}
 	s.capturing.Store(true)
 	if opts.Decrypt.Mode == "" {
@@ -203,6 +212,32 @@ func (s *Server) Serve() error {
 	return err
 }
 
+// AddListener serves the proxy on one more listener — how `pano mobile`
+// opens the proxy to the LAN without touching the loopback listener. The
+// listener's address counts as pano itself (requests for it are served
+// locally, never forwarded). Close it with RemoveListener.
+func (s *Server) AddListener(ln net.Listener) {
+	s.mu.Lock()
+	s.extra[ln] = struct{}{}
+	if tcp, ok := ln.Addr().(*net.TCPAddr); ok {
+		s.selfIPs[tcp.IP.String()] = tcp.Port
+	}
+	s.mu.Unlock()
+	go func() { _ = s.front.Serve(ln) }()
+}
+
+// RemoveListener closes a listener added with AddListener. Open tunnels on
+// it keep running until they end.
+func (s *Server) RemoveListener(ln net.Listener) error {
+	s.mu.Lock()
+	delete(s.extra, ln)
+	if tcp, ok := ln.Addr().(*net.TCPAddr); ok {
+		delete(s.selfIPs, tcp.IP.String())
+	}
+	s.mu.Unlock()
+	return ln.Close()
+}
+
 // Shutdown stops accepting and waits for in-flight exchanges up to ctx.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
@@ -250,8 +285,16 @@ func (s *Server) ActiveConns() int { return int(s.active.Load()) }
 func (s *Server) serveFront(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodConnect:
+		s.noteRequest(clientAddr(r.Context()), r.Header.Get("User-Agent"), true)
 		s.handleConnect(w, r)
+	case r.URL.IsAbs() && (s.isSelf(r.URL.Host) || isMagic(r.URL.Host)):
+		// A client that already proxies through pano asking for pano's own
+		// site (the setup page polling its status, or http://pano.internal):
+		// proof that its proxy setting works.
+		s.noteRequest(clientAddr(r.Context()), r.Header.Get("User-Agent"), true)
+		s.serveLocal(w, r)
 	case r.URL.IsAbs():
+		s.noteRequest(clientAddr(r.Context()), r.Header.Get("User-Agent"), true)
 		s.active.Add(1)
 		defer s.active.Add(-1)
 		s.handleExchange(w, r, r.URL.Scheme, r.URL.Host, r.Context())
@@ -260,7 +303,19 @@ func (s *Server) serveFront(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// isMagic reports whether host (with or without port) is MagicHost.
+func isMagic(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return strings.EqualFold(host, MagicHost)
+}
+
 func (s *Server) serveLocal(w http.ResponseWriter, r *http.Request) {
+	if s.opts.Local != nil {
+		s.opts.Local.ServeHTTP(w, r)
+		return
+	}
 	switch r.URL.Path {
 	case "/_pano/ca.pem", "/ca.pem":
 		if len(s.opts.CAPEM) == 0 {
@@ -291,6 +346,11 @@ func (s *Server) serveTunneled(w http.ResponseWriter, r *http.Request) {
 		// for routing but keep the Host header as sent.
 		host = target
 	}
+	if isMagic(target) {
+		s.serveLocal(w, r)
+		return
+	}
+	s.noteRequest(clientAddr(ctx), r.Header.Get("User-Agent"), false)
 	s.handleExchange(w, r, "https", host, ctx)
 }
 
@@ -306,13 +366,20 @@ func sameHostPort(a, b string) bool {
 	return strings.EqualFold(ah, bh) && ap == bp
 }
 
-// isSelf reports whether host:port would loop back into this proxy.
+// isSelf reports whether host:port would loop back into this proxy — the
+// loopback listener or any listener added with AddListener.
 func (s *Server) isSelf(hostport string) bool {
 	h, p, err := net.SplitHostPort(hostport)
 	if err != nil {
 		return false
 	}
 	port, _ := strconv.Atoi(p)
+	s.mu.Lock()
+	extraPort, extra := s.selfIPs[h]
+	s.mu.Unlock()
+	if extra && extraPort == port {
+		return true
+	}
 	if port != s.port {
 		return false
 	}

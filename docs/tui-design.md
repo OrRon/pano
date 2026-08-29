@@ -75,13 +75,15 @@ Columns: narrow `ID TIME METH HOST/PATH ST DUR ⚑`; wide adds `HOST` (right-ali
 
 `▌` cursor · `▍` marked · `●/◐/○` on/partial/off (also decrypt all/only/off) · `⇄` proxy/tunnel · `✓/✕` ok/error ·
 `◆` llm · `≈` stream · `▸` live · `‖` held · `◇` mock · `↻` replay · `⊘` block ·
-`◔` delay · `≋` throttle · `✎` rewrite · `▲/▼` up/down · `⠋…` spinner.
+`◔` delay · `≋` throttle · `✎` rewrite · `▯` remote device (a row's client is
+not this machine; also the `mobile` header chip while `pano mobile` is on) ·
+`▲/▼` up/down · `⠋…` spinner.
 
 ## Keys
 
 List: `j/k` move · `g/G` top/bottom · `⏎` open · `x` explain · `m` mark · `d` diff ·
 `R` replay · `/` filter · `f` follow · `space` pause list · `c` toggle capture ·
-`r` rules · `h` held · `D` decrypt · `o` options for the selected flow ·
+`r` rules · `h` held · `D` decrypt · `M` mobile · `o` options for the selected flow ·
 `n` never-decrypt the selected tunnel's host · `?` help · `q` quit.
 
 Options menu (`o` in the list or detail): every action for that entry with
@@ -90,9 +92,13 @@ to only), `n` never decrypt it (or undo), `/` filter to the host, `R`
 replay, `m` mark, `x` explain. `j/k` + `⏎` also work. The last line names
 the current decrypt state and whether the host is on a list.
 
-Drawer (one drawer, three tabs — `⇥` cycles rules → held → decrypt): `⏎`
-toggle rule / resume held / host → only · `x` remove · `n` host → never ·
-`+` type a host · `1/2/3` decrypt all/only/off · `esc` close.
+Drawer (one drawer, four tabs — `⇥` cycles rules → held → decrypt → mobile):
+`⏎` toggle rule / resume held / host → only / open or close the proxy to the
+Wi-Fi · `x` remove · `n` host → never · `+` type a host · `1/2/3` decrypt
+all/only/off · `esc` close. The Mobile tab shows the QR code (white on black
+whatever the theme, so cameras read it) beside the instructions, then every
+device with `proxy ✓` / `https ✓` state; closed, it lists the devices seen
+and warns that a phone may still point at the old address.
 
 Detail: `1-5` tabs (Summary/Request/Response/Explain/Diff; the strip shows the
 number next to each name) · `⇥` next tab ·

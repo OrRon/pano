@@ -255,6 +255,14 @@ func translateFilter(f api.FlowFilter, now time.Time) sqlFilter {
 	if f.Kind != "" {
 		q.add("flows.kind = ?", f.Kind)
 	}
+	if f.Client != "" {
+		if f.Client == "remote" {
+			q.add("COALESCE(flows.client, '') != '' AND flows.client NOT LIKE '127.%' AND flows.client NOT LIKE '[::1]%'")
+		} else {
+			q.add("flows.client LIKE ? ESCAPE '\\'", likeEscape(f.Client)+":%")
+		}
+		q.residual = true // exact IP compare is the Matcher's
+	}
 	if f.Session != "" {
 		q.add("flows.session = ?", f.Session)
 	}

@@ -74,6 +74,12 @@ Daemon, capture, CA and system-proxy state. Exit 3 when not running.
   ca           ● trusted  ~/.pano/ca.pem
   capture      ● capturing  session "a1b2c3d4"  312 flows in memory, 4021 total
   rules        1 (1 enabled)  held 0  active conns 3
+  decrypt      all  (every host except never)
+    only       —
+    never      *.push.apple.com  *.icloud.com  *.icloud-content.com  *.apple-cloudkit.com  *.ls.apple.com
+  mobile       ● ON  192.168.1.23:9091  en0 · Home  http://pano.internal
+    devices
+  ● iPhone · iOS 17.5  192.168.1.40   proxy ✓  https ✓   42 requests · last 3s ago
 ```
 
 ### `pano on` / `pano off`
@@ -176,6 +182,7 @@ afterwards.
 | `--state S` | `all\|held\|active\|done\|failed\|replayed\|mocked\|blocked` |
 | `--kind K` | `http\|websocket\|tunnel` |
 | `--session ID` | session id (see `pano session ls`) |
+| `--client IP` | flows from one client address — a phone from `pano mobile status` — or `remote` for every client that is not this machine |
 
 ### `pano flows` (alias `ls`)
 
@@ -435,6 +442,60 @@ pano export har --host api.openai.com --since 1h -o openai.har
 
 `-i, --in FILE` — import a HAR (from pano, Chrome, Firefox, other proxies)
 into the current session; imported flows are tagged `imported`.
+
+## Phones and tablets
+
+### `pano mobile`
+
+Opens the proxy to devices on the same Wi-Fi and prints a QR code that opens
+pano's setup page on the phone. The page names the proxy settings, hands out
+the certificate in the form the device installs (a configuration profile on
+iOS, a `.crt` on Android) and ticks each step off as the phone gets there.
+The Mac's own system proxy is untouched; only the proxy port is exposed,
+only to private addresses. Full walkthrough in [mobile.md](mobile.md).
+
+```
+╭─────╮
+│ ◉ ◉ │  ✓ proxy open to your network at 192.168.1.23:9091  en0 · Home
+╰─────╯    the Mac's own proxy setting is unchanged
+
+  <QR code>                          On the phone (same Wi-Fi)
+                                     Scan → the setup page opens. …
+                                     No camera?   http://192.168.1.23:9091
+                                     Proxied already? http://pano.internal
+
+  ● iPhone · iOS 17.5  192.168.1.40   proxy ✓  https ✓   42 requests
+  ctrl-c leaves this open · close with pano mobile off
+```
+
+| Flag | Effect |
+|---|---|
+| `--ip ADDR` | listen on this address instead of the Wi-Fi interface's |
+| `--port N` | port for the LAN listener (default: the proxy port) |
+| `--no-wait` | print and return instead of watching devices arrive |
+| `--no-qr` | skip the QR code |
+
+`pano mobile on` is the same command. `ctrl-c` leaves the listener open.
+Starts the daemon if it is not running. Exposing the proxy is terminal-only:
+there is no MCP tool for it.
+
+### `pano mobile status`
+
+The listener (address, interface, network, `http://pano.internal`) and every
+device seen with its state — `proxy ✓` after its first request through pano,
+`https ✓` after its first accepted handshake, `https ✕ ×n` while it refuses
+the certificate — plus request count and last-seen time. `pano status`
+prints the same block. `--json` gives the structure.
+
+### `pano mobile off`
+
+Closes the LAN listener (open tunnels finish on their own). If the Mac's
+system proxy is not routed through pano — no `pano on` — nothing else needs
+the daemon, so it is stopped too: `pano mobile` then `pano mobile off` leaves
+nothing running. With `pano on` active the daemon stays and only the network
+side closes. `--keep-daemon` closes just the listener. Warns when a device
+was seen, because that phone still points at the closed port until its Wi-Fi
+proxy is turned off. `pano off` closes everything as well.
 
 ## Per-process capture
 

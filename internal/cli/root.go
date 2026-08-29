@@ -113,7 +113,7 @@ Quick start:
 		app.cmdCA(), app.cmdTail(), app.cmdFlows(), app.cmdShow(), app.cmdExplain(), app.cmdDiff(),
 		app.cmdReplay(), app.cmdRules(), app.cmdBP(), app.cmdSession(), app.cmdDecrypt(),
 		app.cmdExport(), app.cmdImport(), app.cmdRun(), app.cmdEnv(), app.cmdDoctor(), app.cmdConfig(),
-		app.cmdMCP(), app.cmdUI(), app.cmdDaemon(), app.cmdWatchdog(),
+		app.cmdMCP(), app.cmdUI(), app.cmdMobile(), app.cmdDaemon(), app.cmdWatchdog(),
 	)
 	root.CompletionOptions.HiddenDefaultCmd = false
 	return root

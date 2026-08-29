@@ -62,7 +62,7 @@ func (m *Model) render() string {
 	base := strings.Join(parts, "\n")
 
 	switch m.mode {
-	case modeRules, modeHeld, modeDecrypt:
+	case modeRules, modeHeld, modeDecrypt, modeMobile:
 		if m.bp() == bpS {
 			// full-screen replacement (no compositing on small terminals)
 			panel := m.renderDrawer(w, bodyH)
@@ -75,6 +75,10 @@ func (m *Model) render() string {
 		if m.mode == modeDecrypt {
 			pw = min(w-6, 110)
 			want = m.decryptRows() + 1
+		}
+		if m.mode == modeMobile {
+			pw = min(w-6, 100)
+			want = m.mobileRows() + 1
 		}
 		ph := min(bodyH-2, max(8, want))
 		return m.overlay(base, m.renderDrawer(pw, ph), w-pw-4, 2, pw)

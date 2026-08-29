@@ -150,6 +150,7 @@ type flowsIn struct {
 	Rule        string   `json:"rule,omitempty" jsonschema:"rule id that matched"`
 	State       string   `json:"state,omitempty" jsonschema:"all|held|active|done|failed|replayed|mocked|blocked"`
 	Kind        string   `json:"kind,omitempty" jsonschema:"http|websocket|tunnel"`
+	Client      string   `json:"client,omitempty" jsonschema:"client IP, e.g. a phone from pano_status devices; 'remote' for every non-loopback client"`
 	Limit       int      `json:"limit,omitempty" jsonschema:"default 50, max 200"`
 	Cursor      string   `json:"cursor,omitempty" jsonschema:"opaque, from a previous call"`
 }
@@ -158,7 +159,7 @@ func (in flowsIn) filter() api.FlowFilter {
 	return api.FlowFilter{
 		Q: in.Q, Host: in.Host, Path: in.Path, Method: in.Method, Status: in.Status, Since: in.Since, Until: in.Until,
 		ContentType: in.ContentType, MinBytes: in.MinBytes, HasError: in.HasError, Tag: in.Tag, Rule: in.Rule,
-		State: in.State, Kind: in.Kind, Limit: in.Limit, Cursor: in.Cursor,
+		State: in.State, Kind: in.Kind, Client: in.Client, Limit: in.Limit, Cursor: in.Cursor,
 	}
 }
 
@@ -303,6 +304,54 @@ func FormatStatus(st api.Status) string {
 		fmt.Fprintf(&b, "\nWARNING: %d events dropped by the store", st.Dropped)
 	}
 	b.WriteString("\n" + FormatDecrypt(st.Decrypt))
+	b.WriteString("\n" + FormatMobile(st.Mobile))
+	return b.String()
+}
+
+// FormatMobile renders the LAN listener and every device seen, in full.
+func FormatMobile(m api.Mobile) string {
+	var b strings.Builder
+	if m.Enabled {
+		fmt.Fprintf(&b, "mobile: on at %s (%s", m.Addr, m.Interface)
+		if m.Network != "" {
+			fmt.Fprintf(&b, " · %s", m.Network)
+		}
+		fmt.Fprintf(&b, ") — phones open %s or %s", m.URL, m.MagicURL)
+		if m.Warning != "" {
+			fmt.Fprintf(&b, "\n  warning: %s", m.Warning)
+		}
+	} else {
+		b.WriteString("mobile: off — the user can run `pano mobile` in a terminal to put a phone behind pano (not available over MCP)")
+		if m.LastAddr != "" && len(m.Devices) > 0 {
+			fmt.Fprintf(&b, "\n  was at %s — a device may still point there (no internet on it until its Wi-Fi proxy is turned off or `pano mobile` runs again)", m.LastAddr)
+		}
+	}
+	if len(m.Devices) == 0 {
+		return b.String()
+	}
+	if !m.Enabled {
+		b.WriteString("\n  devices seen while it was on:")
+		for _, d := range m.Devices {
+			fmt.Fprintf(&b, "\n    %s %s — %d requests, last %s", d.IP, d.Label(), d.Requests, d.LastSeen.Format("15:04:05"))
+		}
+		return b.String()
+	}
+	b.WriteString("\n  devices:")
+	for _, d := range m.Devices {
+		state := "proxy ✓"
+		switch {
+		case d.TLS:
+			state += ", https ✓"
+		case d.Rejected > 0:
+			state += fmt.Sprintf(", https ✕ (certificate refused ×%d — not trusted yet?)", d.Rejected)
+		case !d.Proxy:
+			state = "no proxied request yet"
+		default:
+			state += ", https not tried"
+		}
+		fmt.Fprintf(&b, "\n    %s %s — %s, %d requests, last %s", d.IP, d.Label(), state, d.Requests, d.LastSeen.Format("15:04:05"))
+	}
+	b.WriteString("\n  → pano_flows client=<ip> lists one device's traffic")
 	return b.String()
 }
 

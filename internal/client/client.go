@@ -428,6 +428,18 @@ func (c *Client) SetSysProxy(ctx context.Context, req api.SysProxyRequest) (api.
 	return s, c.do(ctx, "POST", "/v1/sysproxy", req, &s)
 }
 
+// Mobile returns the LAN listener state and the devices seen.
+func (c *Client) Mobile(ctx context.Context) (api.Mobile, error) {
+	var m api.Mobile
+	return m, c.do(ctx, "GET", "/v1/mobile", nil, &m)
+}
+
+// SetMobile opens or closes the proxy to the LAN.
+func (c *Client) SetMobile(ctx context.Context, req api.MobileRequest) (api.Mobile, error) {
+	var m api.Mobile
+	return m, c.do(ctx, "POST", "/v1/mobile", req, &m)
+}
+
 // Config returns the live configuration.
 func (c *Client) Config(ctx context.Context) (json.RawMessage, error) {
 	var r json.RawMessage

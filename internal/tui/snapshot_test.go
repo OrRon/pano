@@ -25,6 +25,11 @@ func sampleModel(w, h int) *Model {
 		Flows: 1318, FlowsTotal: 1318, Rules: 2, RulesEnabled: 1, Held: 1, ActiveConns: 3,
 		CA: api.CAStatus{Trusted: true, Supported: true}, SystemProxy: api.SysProxy{Supported: true, Enabled: true, SetByPano: true, Detail: "Wi-Fi"},
 		Redaction: true,
+		Mobile: api.Mobile{
+			Enabled: true, Addr: "192.168.1.23:9091", IP: "192.168.1.23", Port: 9091, Interface: "en0", Network: "Home",
+			URL: "http://192.168.1.23:9091", MagicURL: "http://pano.internal",
+			Devices: []api.Device{{IP: "192.168.1.40", Name: "iPhone · iOS 17.5", Proxy: true, TLS: true, Requests: 42, Decrypted: 12, LastSeen: m.now}},
+		},
 		Decrypt: api.Decrypt{
 			Mode: "all", Only: []string{},
 			Never: []string{"*.push.apple.com", "*.icloud.com", "*.icloud-content.com", "*.apple-cloudkit.com", "*.ls.apple.com", "whatsapp.net", "*.bank.example"},
@@ -38,7 +43,7 @@ func sampleModel(w, h int) *Model {
 	rows := []api.FlowRow{
 		{ID: 1318, Short: "19a6", Time: base, Kind: flow.KindHTTP, Method: "POST", Host: "api.anthropic.com", Path: "/v1/messages", Status: 0, Duration: "1.2s", Up: 8100, Down: 3400, Type: "sse", Flags: []string{"llm", "stream", "active"}, State: flow.StateActive},
 		{ID: 1317, Short: "19a5", Time: base.Add(-2 * time.Second), Kind: flow.KindHTTP, Method: "POST", Host: "api.openai.com", Path: "/v1/chat/completions", Status: 429, Duration: "220ms", Up: 1200, Down: 300, Type: "json", Flags: []string{"llm", "err"}, State: flow.StateDone},
-		{ID: 1316, Short: "19a4", Time: base.Add(-3 * time.Second), Kind: flow.KindHTTP, Method: "GET", Host: "cdn.shop.example", Path: "/assets/app.3f2a1c.js", Status: 304, Duration: "18ms", Up: 0, Down: 0, Type: "js", State: flow.StateDone},
+		{ID: 1316, Short: "19a4", Time: base.Add(-3 * time.Second), Kind: flow.KindHTTP, Method: "GET", Host: "cdn.shop.example", Path: "/assets/app.3f2a1c.js", Status: 304, Duration: "18ms", Up: 0, Down: 0, Type: "js", State: flow.StateDone, Client: "192.168.1.40:52011"},
 		{ID: 1315, Short: "19a3", Time: base.Add(-5 * time.Second), Kind: flow.KindHTTP, Method: "POST", Host: "api.stripe.com", Path: "/v1/payment_intents", Status: 402, Duration: "310ms", Up: 640, Down: 1100, Type: "json", Flags: []string{"err"}, State: flow.StateDone, Error: ""},
 		{ID: 1314, Short: "19a2", Time: base.Add(-6 * time.Second), Kind: flow.KindHTTP, Method: "POST", Host: "api.stripe.com", Path: "/v1/customers", Status: 200, Duration: "3.02s", Up: 640, Down: 2200, Type: "json", Flags: []string{"delay"}, State: flow.StateDone},
 		{ID: 1313, Short: "19a1", Time: base.Add(-9 * time.Second), Kind: flow.KindHTTP, Method: "GET", Host: "shop.example", Path: "/checkout?step=payment&cart=8813", Status: 200, Duration: "141ms", Up: 0, Down: 48200, Type: "html", State: flow.StateDone},
@@ -195,6 +200,13 @@ func TestSnapshots(t *testing.T) {
 		{"rules", func(m *Model) { m.mode = modeRules }},
 		{"held", func(m *Model) { m.mode = modeHeld }},
 		{"decrypt", func(m *Model) { m.mode = modeDecrypt; m.drawerIx = 5 }},
+		{"mobile", func(m *Model) { m.mode = modeMobile }},
+		{"mobile-off", func(m *Model) {
+			m.mode = modeMobile
+			m.status.Mobile.Enabled = false
+			m.status.Mobile.LastAddr = m.status.Mobile.Addr
+			m.status.Mobile.Addr = ""
+		}},
 		{"actions", func(m *Model) { m.mode = modeActions; m.prevMode = modeList; m.cursor = 1 }},
 		{"decrypt-only", func(m *Model) {
 			m.mode = modeList

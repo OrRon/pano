@@ -24,6 +24,7 @@ const (
 	modeRules
 	modeHeld
 	modeDecrypt
+	modeMobile
 	modeActions
 	modeHelp
 )
@@ -140,7 +141,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.frame%12 == 0 && (m.mode == modeRules || m.mode == modeHeld || len(m.held) > 0) {
 			cmds = append(cmds, fetchRules(m.c))
 		}
-		if m.frame%12 == 0 && m.mode == modeDecrypt {
+		if m.frame%12 == 0 && (m.mode == modeDecrypt || m.mode == modeMobile) {
 			cmds = append(cmds, fetchStatus(m.c))
 		}
 		return m, tea.Batch(cmds...)
@@ -299,7 +300,7 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case modeActions:
 		return m.handleActionsKey(key)
-	case modeRules, modeHeld, modeDecrypt:
+	case modeRules, modeHeld, modeDecrypt, modeMobile:
 		return m.handleDrawerKey(key)
 	case modeDetail:
 		return m.handleDetailKey(k)
@@ -386,6 +387,11 @@ func (m *Model) handleListKey(key string) (tea.Model, tea.Cmd) {
 	case "D":
 		m.prevMode = modeList
 		m.mode = modeDecrypt
+		m.drawerIx = 0
+		return m, fetchStatus(m.c)
+	case "M":
+		m.prevMode = modeList
+		m.mode = modeMobile
 		m.drawerIx = 0
 		return m, fetchStatus(m.c)
 	case "o":
@@ -527,8 +533,13 @@ func (m *Model) handleDrawerKey(key string) (tea.Model, tea.Cmd) {
 			return mm, cmd
 		}
 	}
+	if m.mode == modeMobile {
+		if mm, cmd, handled := m.handleMobileKey(key); handled {
+			return mm, cmd
+		}
+	}
 	switch key {
-	case "esc", "q", "r", "h", "D":
+	case "esc", "q", "r", "h", "D", "M":
 		m.mode = modeList
 	case "j", "down":
 		if m.drawerIx < m.drawerLen()-1 {
@@ -544,6 +555,8 @@ func (m *Model) handleDrawerKey(key string) (tea.Model, tea.Cmd) {
 			m.mode = modeHeld
 		case modeHeld:
 			m.mode = modeDecrypt
+		case modeDecrypt:
+			m.mode = modeMobile
 		default:
 			m.mode = modeRules
 		}
@@ -575,6 +588,8 @@ func (m *Model) drawerLen() int {
 		return len(m.held)
 	case modeDecrypt:
 		return len(m.decryptItems())
+	case modeMobile:
+		return len(m.status.Mobile.Devices)
 	default:
 		return len(m.rules)
 	}
@@ -866,6 +881,8 @@ func parseFilter(s string) api.FlowFilter {
 			f.Kind = v
 		case "session":
 			f.Session = v
+		case "client", "device":
+			f.Client = v
 		case "err", "errors", "error":
 			f.HasError = v == "1" || v == "true" || v == "yes"
 		default:
@@ -934,6 +951,9 @@ func (rm rowMatcher) match(r api.FlowRow) bool {
 		}
 	}
 	if rm.status != nil && !rm.status(r.Status) {
+		return false
+	}
+	if f.Client != "" && !store.MatchClient(f.Client, r.Client) {
 		return false
 	}
 	if f.HasError && r.Error == "" && r.Status < 400 {

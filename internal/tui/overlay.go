@@ -16,7 +16,7 @@ func (m *Model) renderDrawer(w, h int) []string {
 	var out []string
 	tabs := func(active string) string {
 		var parts []string
-		for _, n := range []string{"Rules", "Held", "Decrypt"} {
+		for _, n := range []string{"Rules", "Held", "Decrypt", "Mobile"} {
 			if n == active {
 				parts = append(parts, t.primary().Underline(true).UnderlineColor(t.Accent).Render(n))
 			} else {
@@ -24,6 +24,15 @@ func (m *Model) renderDrawer(w, h int) []string {
 			}
 		}
 		return " " + strings.Join(parts, "   ")
+	}
+	if m.mode == modeMobile {
+		state := t.muted().Render(glyphOff + " off")
+		if m.status.Mobile.Enabled {
+			state = t.fg(t.OK).Render(glyphMobile + " " + m.status.Mobile.Addr)
+		}
+		out = append(out, t.raised(line(tabs("Mobile")+"   "+state, w)))
+		out = append(out, m.renderMobileTab(w, h-1)...)
+		return pad(out, w, h)
 	}
 	if m.mode == modeDecrypt {
 		_, st := t.modeStyle(m.status.Decrypt.Mode)
@@ -127,8 +136,8 @@ func (m *Model) renderHelp(w, h int) []string {
 	groups := []group{
 		{"navigate", [][2]string{{"j/k ↑/↓", "move"}, {"g/G", "top/bottom"}, {"^d/^u", "half page"}, {"⏎ l", "open flow"}, {"esc h", "back / clear filter"}, {"f", "follow newest"}, {"space", "pause list"}}},
 		{"inspect", [][2]string{{"1-5", "summary/request/response/explain/diff"}, {"⇥", "next tab"}, {"v", "cycle view: summary→schema→pretty→raw"}, {"/", "filter (list) · JSON path (detail)"}, {"x", "explain LLM call"}, {"S", "reveal secrets (audited)"}, {"H", "toggle headers"}}},
-		{"act", [][2]string{{"m", "mark for diff"}, {"d", "diff marked ↔ selected"}, {"R", "replay"}, {"c", "toggle capture"}, {"r", "rules drawer"}, {"h", "held requests"}, {"D", "decrypt drawer"}, {"o", "options for the selected flow: decrypt only/never its host, filter, replay…"}, {"n", "never decrypt this tunnel's host"}}},
-		{"drawers", [][2]string{{"⏎", "toggle rule · resume held · host → only"}, {"x", "remove rule · drop held · remove host"}, {"n", "host → never"}, {"+", "type a host to add"}, {"1/2/3", "decrypt all / only / off"}, {"⇥", "rules → held → decrypt"}}},
+		{"act", [][2]string{{"m", "mark for diff"}, {"d", "diff marked ↔ selected"}, {"R", "replay"}, {"c", "toggle capture"}, {"r", "rules drawer"}, {"h", "held requests"}, {"D", "decrypt drawer"}, {"M", "mobile drawer: open the proxy to phones, QR code, devices"}, {"o", "options for the selected flow: decrypt only/never its host, filter, replay…"}, {"n", "never decrypt this tunnel's host"}}},
+		{"drawers", [][2]string{{"⏎", "toggle rule · resume held · host → only"}, {"x", "remove rule · drop held · remove host"}, {"n", "host → never"}, {"+", "type a host to add"}, {"1/2/3", "decrypt all / only / off"}, {"⏎ (mobile)", "open / close the proxy to the Wi-Fi"}, {"⇥", "rules → held → decrypt → mobile"}}},
 	}
 	var out []string
 	out = append(out, t.raised(line(" "+t.secondary().Bold(true).Render("KEYS")+"   "+t.faint().Render("esc closes"), w)))

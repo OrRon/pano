@@ -150,6 +150,25 @@ func (m *Model) renderHeader(w int) string {
 			parts = append(parts, chip(glyphBad, t.fg(t.Err), "ca untrusted", t.fg(t.Err)))
 		}
 		parts = append(parts, m.renderDecryptChips(w)...)
+		if st.Mobile.Enabled {
+			// Wide: address and the latest device; otherwise just a count —
+			// the header is already full at 120 columns.
+			lbl := "mobile"
+			if w >= 160 {
+				lbl = "mobile " + st.Mobile.Addr
+			}
+			if n := len(st.Mobile.Devices); n > 0 {
+				if w >= 160 && st.Mobile.Devices[0].Name != "" {
+					lbl += " · " + st.Mobile.Devices[0].Name
+					if n > 1 {
+						lbl += fmt.Sprintf(" +%d", n-1)
+					}
+				} else {
+					lbl += fmt.Sprintf(" ·%d", n)
+				}
+			}
+			parts = append(parts, chip(glyphMobile, t.fg(t.OK), lbl, t.secondary()))
+		}
 		if st.Rules > 0 {
 			lbl := fmt.Sprintf("%d rules", st.Rules)
 			if w >= 160 && st.RulesEnabled != st.Rules {
@@ -232,13 +251,19 @@ func (m *Model) renderFooter(w int) string {
 	case modeActions:
 		hints = []hint{{"⏎", "run"}, {"j/k", "move"}, {"o", "only"}, {"n", "never"}, {"/", "host filter"}, {"esc", "close"}}
 	case modeDecrypt:
-		hints = []hint{{"1/2/3", "all/only/off"}, {"⏎", "→ only"}, {"n", "→ never"}, {"x", "remove"}, {"+", "add host"}, {"⇥", "rules"}, {"esc", "close"}}
+		hints = []hint{{"1/2/3", "all/only/off"}, {"⏎", "→ only"}, {"n", "→ never"}, {"x", "remove"}, {"+", "add host"}, {"⇥", "mobile"}, {"esc", "close"}}
+	case modeMobile:
+		if m.status.Mobile.Enabled {
+			hints = []hint{{"⏎", "close to the network"}, {"⇥", "rules"}, {"esc", "close"}}
+		} else {
+			hints = []hint{{"⏎", "open to phones on your Wi-Fi"}, {"⇥", "rules"}, {"esc", "close"}}
+		}
 	case modeFilter:
 		hints = []hint{{"⏎", "apply"}, {"esc", "cancel"}}
 	case modeHelp:
 		hints = []hint{{"esc", "close"}}
 	default:
-		hints = []hint{{"j/k", "move"}, {"⏎", "open"}, {"o", "options"}, {"/", "filter"}, {"x", "explain"}, {"m", "mark"}, {"d", "diff"}, {"R", "replay"}, {"r", "rules"}, {"h", "held"}, {"D", "decrypt"}, {"space", "pause"}, {"?", "help"}}
+		hints = []hint{{"j/k", "move"}, {"⏎", "open"}, {"o", "options"}, {"/", "filter"}, {"x", "explain"}, {"m", "mark"}, {"d", "diff"}, {"R", "replay"}, {"r", "rules"}, {"h", "held"}, {"D", "decrypt"}, {"M", "mobile"}, {"space", "pause"}, {"?", "help"}}
 		if r, ok := m.selected(); ok && r.Kind == flow.KindTunnel {
 			hints = append([]hint{{"n", "never decrypt " + r.Host}}, hints...)
 		}
@@ -398,6 +423,9 @@ func (m *Model) flagGlyphs(r api.FlowRow, wordy bool) string {
 		}
 	}
 	seen := map[string]bool{}
+	if isRemoteClient(r.Client) {
+		add(glyphMobile, t.secondary(), "remote")
+	}
 	for _, f := range r.Flags {
 		if seen[f] {
 			continue
@@ -441,6 +469,12 @@ func (m *Model) flagGlyphs(r api.FlowRow, wordy bool) string {
 		}
 	}
 	return strings.Join(out, " ")
+}
+
+// isRemoteClient reports whether a flow came from another device (phone,
+// tablet) rather than this machine.
+func isRemoteClient(addr string) bool {
+	return addr != "" && store.MatchClient("remote", addr)
 }
 
 func isStatic(r api.FlowRow) bool {

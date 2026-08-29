@@ -57,6 +57,7 @@ type Status struct {
 	Held         int       `json:"held"`
 	Persist      bool      `json:"persist"`
 	Decrypt      Decrypt   `json:"decrypt"`
+	Mobile       Mobile    `json:"mobile"`
 	Redaction    bool      `json:"redaction"`
 	BusSeq       uint64    `json:"bus_seq"`
 	StartedAt    time.Time `json:"started_at"`
@@ -101,6 +102,7 @@ type FlowFilter struct {
 	State       string   `json:"state,omitempty"` // all|held|replayed|blocked|mocked|active
 	Kind        string   `json:"kind,omitempty"`
 	Session     string   `json:"session,omitempty"`
+	Client      string   `json:"client,omitempty"` // client IP, or "remote" for every non-loopback client
 	Limit       int      `json:"limit,omitempty"`
 	Cursor      string   `json:"cursor,omitempty"`
 	Fields      []string `json:"fields,omitempty"`
@@ -407,6 +409,57 @@ const RejectedAlias = "@rejected"
 type SysProxyRequest struct {
 	Enabled bool   `json:"enabled"`
 	Confirm string `json:"confirm,omitempty"`
+}
+
+// Mobile describes the LAN listener that phones and other devices on the
+// same network use (`pano mobile`). Off by default: the proxy only listens on
+// loopback until asked. Devices lists every remote client the proxy has seen,
+// most recent first — the full list, always.
+type Mobile struct {
+	Enabled   bool     `json:"enabled"`
+	Addr      string   `json:"addr,omitempty"` // ip:port the LAN listener is bound to
+	IP        string   `json:"ip,omitempty"`
+	Port      int      `json:"port,omitempty"`
+	URL       string   `json:"url,omitempty"`       // setup page, e.g. http://192.168.1.23:9091
+	Interface string   `json:"interface,omitempty"` // en0
+	Network   string   `json:"network,omitempty"`   // Wi-Fi SSID when known
+	MagicURL  string   `json:"magic_url,omitempty"` // http://pano.internal — same page once the proxy is set
+	Warning   string   `json:"warning,omitempty"`   // e.g. the Mac's LAN address changed since enabling
+	LastAddr  string   `json:"last_addr,omitempty"` // where the listener was, once it has been closed — a phone may still point there
+	Devices   []Device `json:"devices"`
+}
+
+// Device is one remote client of the proxy and how far it has got through
+// setup. Proxy means it has routed something through pano; TLS means it has
+// accepted pano's certificate at least once; Rejected counts refused
+// handshakes (certificate not trusted yet, or an app that pins).
+type Device struct {
+	IP        string    `json:"ip"`
+	Name      string    `json:"name,omitempty"`
+	UserAgent string    `json:"user_agent,omitempty"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+	Requests  int       `json:"requests"`
+	Decrypted int       `json:"decrypted"`
+	Rejected  int       `json:"rejected"`
+	Proxy     bool      `json:"proxy"`
+	TLS       bool      `json:"tls"`
+}
+
+// Label is the device's name, or its IP when the name is unknown.
+func (d Device) Label() string {
+	if d.Name != "" {
+		return d.Name
+	}
+	return d.IP
+}
+
+// MobileRequest turns the LAN listener on or off. IP and Port are optional
+// overrides (default: the Mac's Wi-Fi address and the proxy port).
+type MobileRequest struct {
+	Enabled bool   `json:"enabled"`
+	IP      string `json:"ip,omitempty"`
+	Port    int    `json:"port,omitempty"`
 }
 
 // TailRequest long-polls for new flows.
