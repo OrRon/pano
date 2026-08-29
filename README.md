@@ -24,7 +24,8 @@ token-efficient views, and through a CLI for humans.
   write-behind SQLite with full-text search.
 
 > pano is a man-in-the-middle proxy for **your own machine**. Trusting its CA lets
-> software on this Mac decrypt this Mac's traffic. See [SECURITY.md](SECURITY.md).
+> software on this Mac decrypt this Mac's traffic. See
+> [Safety](#safety-how-pano-treats-its-ca) below and [SECURITY.md](SECURITY.md).
 
 ## Quickstart (60 seconds)
 
@@ -68,6 +69,25 @@ Browser ══HTTP══▶ pano: plaintext → capture · rules · breakpoints
 
 See [docs/architecture.md](docs/architecture.md) for the full design and
 [docs/mcp.md](docs/mcp.md) for the tool catalog.
+
+## Safety: how pano treats its CA
+
+A trusted root certificate is the most dangerous thing a dev tool can ask
+for, so pano handles its own with care:
+
+| | |
+|---|---|
+| **Yours alone** | Generated on first run, on this machine, for this user. Nothing is shipped in the binary; no two installs share a key. |
+| **Key stays put** | `~/.pano/ca.key`, mode `0600`, refused if anyone else can read it. Never logged, never served over the control API or MCP. |
+| **Short-lived** | The root is valid for **2 years** (most interception tools use 10). Leaf certs last 30 days and never outlive the root. |
+| **Rotates itself** | An expired root is replaced automatically; `pano status` and `pano doctor` warn 30 days ahead. `pano ca reset` renews early and untrusts the old root first. |
+| **TLS only** | Keychain trust is granted for the SSL policy only, never code signing, S/MIME or software updates — a leaked root could not sign an app. |
+| **Terminal only** | `pano ca install` is not exposed to agents over MCP; the one macOS password prompt is yours. |
+| **Reversible** | `pano ca uninstall` removes every pano root from the keychain, including ones left by earlier rotations. |
+
+Toward origins pano is an ordinary TLS client that verifies real certificates
+against the system roots; it never weakens the upstream side.
+[SECURITY.md](SECURITY.md) has the full list.
 
 ## Performance
 

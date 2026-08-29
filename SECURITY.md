@@ -7,7 +7,9 @@ certificate authority that pano generated on *this machine* to your login keycha
 From then on, any software on this machine that trusts the keychain will accept
 certificates pano mints on the fly, and pano can decrypt that software's HTTPS traffic.
 
-That is the feature. It is also the risk. Please understand it before installing:
+That is the feature. It is also the risk. Please understand it before installing.
+
+## The certificate authority
 
 - The CA is generated on first run, per user, on this machine — nothing is shipped in
   the binary and no two installs share key material. Its private key lives in
@@ -20,6 +22,14 @@ That is the feature. It is also the risk. Please understand it before installing
 - Trust is installed for the **TLS server policy only** (`-p ssl -p basic`), so even a
   trusted pano root cannot vouch for signed code, S/MIME mail, software updates or
   packages.
+- `pano ca reset` untrusts the outgoing root before generating a new one, and
+  `pano ca uninstall` removes every pano root from the keychain, including any left by
+  earlier rotations. No pano root should ever remain trusted without a live key behind it.
+- Toward origins pano is an ordinary TLS client that verifies real certificates against
+  the system roots. It never downgrades or skips verification upstream.
+
+## The rest of the surface
+
 - pano binds to `127.0.0.1` only. The control socket `~/.pano/pano.sock` is `0600`.
 - pano refuses to run as root.
 - The optional Streamable HTTP MCP endpoint (`127.0.0.1:9092/mcp`) is loopback-only with
