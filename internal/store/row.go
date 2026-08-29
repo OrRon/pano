@@ -147,7 +147,8 @@ func FormatBytes(n int64) string {
 
 // Query lists flows from the ring newest-first honouring filter, limit and
 // cursor ("before:<id>"). Returns rows, total matches, and the next cursor.
-func Query(m *Mem, filter api.FlowFilter, limit int, now time.Time) api.FlowList {
+// bodies, when non-nil, lets Q search decoded textual bodies too.
+func Query(m *Mem, filter api.FlowFilter, limit int, now time.Time, bodies BodyFunc) api.FlowList {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -160,7 +161,7 @@ func Query(m *Mem, filter api.FlowFilter, limit int, now time.Time) api.FlowList
 			before = id
 		}
 	}
-	mt := Compile(filter, now)
+	mt := Compile(filter, now).WithBodies(bodies)
 	out := api.FlowList{}
 	var last flow.ID
 	m.Each(func(f *flow.Flow) bool {

@@ -16,7 +16,7 @@ import (
 
 func addFilterFlags(cmd *cobra.Command, f *api.FlowFilter) {
 	fl := cmd.Flags()
-	fl.StringVar(&f.Q, "q", "", "full-text search (url, headers, text bodies)")
+	fl.StringVar(&f.Q, "q", "", "text search: substring of url, headers or text bodies")
 	fl.StringVar(&f.Host, "host", "", "host glob, e.g. api.openai.com or *.googleapis.com")
 	fl.StringVar(&f.Path, "path", "", "path prefix or glob")
 	fl.StringSliceVarP(&f.Method, "method", "m", nil, "methods (GET,POST)")

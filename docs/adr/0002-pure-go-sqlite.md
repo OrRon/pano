@@ -1,6 +1,6 @@
 # ADR 0002: Pure-Go SQLite (modernc.org/sqlite) with write-behind ingestion
 
-Status: accepted (2026-08)
+Status: superseded by [ADR 0011](0011-in-memory-only.md) (2026-08-30) — pano no longer persists anything; this ADR is kept for the record.
 
 ## Context
 

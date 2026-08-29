@@ -9,7 +9,7 @@ answer (`[mcp] autostart = true`), and `pano off` only restored the macOS
 proxy settings and left the daemon running. Because Claude Code spawns
 `pano mcp` at the start of every session, the practical effect was that the
 daemon was running whenever a session had been opened since the last reboot
-— capturing, growing `pano.db`, holding a listener on `:9091` — without the
+— capturing, filling its ring, holding a listener on `:9091` — without the
 user having asked for it that day. The owner's requirement is the opposite:
 **pano runs only after the user turns it on in a terminal, and MCP tools are
 usable only during that window.**

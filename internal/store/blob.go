@@ -19,21 +19,15 @@ func Hash(b []byte) string {
 	return hex.EncodeToString(s[:])
 }
 
-// MemBlobs is an LRU byte-budgeted blob cache. A Persister, if set, is
-// consulted on miss and told about every Put.
+// MemBlobs is an LRU byte-budgeted in-memory blob store. Bodies of the
+// least recently used flows are dropped once the budget is exceeded; a flow
+// whose body was dropped still lists, it just has no body to show.
 type MemBlobs struct {
-	mu        sync.Mutex
-	budget    int64
-	used      int64
-	lru       *list.List
-	index     map[string]*list.Element
-	Persister BlobPersister
-}
-
-// BlobPersister is a durable backing store for blobs.
-type BlobPersister interface {
-	PutBlob(hash string, b []byte)
-	GetBlob(hash string) ([]byte, bool)
+	mu     sync.Mutex
+	budget int64
+	used   int64
+	lru    *list.List
+	index  map[string]*list.Element
 }
 
 type blobEntry struct {
@@ -41,7 +35,7 @@ type blobEntry struct {
 	b    []byte
 }
 
-// NewMemBlobs creates a cache with the given byte budget.
+// NewMemBlobs creates a store with the given byte budget (0 = 256 MiB).
 func NewMemBlobs(budget int64) *MemBlobs {
 	if budget <= 0 {
 		budget = 256 << 20
@@ -53,9 +47,9 @@ func NewMemBlobs(budget int64) *MemBlobs {
 func (m *MemBlobs) Put(b []byte) string {
 	h := Hash(b)
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	if el, ok := m.index[h]; ok {
 		m.lru.MoveToFront(el)
-		m.mu.Unlock()
 		return h
 	}
 	m.index[h] = m.lru.PushFront(&blobEntry{hash: h, b: b})
@@ -67,37 +61,40 @@ func (m *MemBlobs) Put(b []byte) string {
 		delete(m.index, e.hash)
 		m.lru.Remove(last)
 	}
-	p := m.Persister
-	m.mu.Unlock()
-	if p != nil {
-		p.PutBlob(h, b)
-	}
 	return h
 }
 
 // Get fetches by hash.
 func (m *MemBlobs) Get(hash string) ([]byte, bool) {
 	m.mu.Lock()
-	if el, ok := m.index[hash]; ok {
-		m.lru.MoveToFront(el)
-		b := el.Value.(*blobEntry).b
-		m.mu.Unlock()
-		return b, true
-	}
-	p := m.Persister
-	m.mu.Unlock()
-	if p == nil {
-		return nil, false
-	}
-	b, ok := p.GetBlob(hash)
+	defer m.mu.Unlock()
+	el, ok := m.index[hash]
 	if !ok {
 		return nil, false
 	}
+	m.lru.MoveToFront(el)
+	return el.Value.(*blobEntry).b, true
+}
+
+// Clear drops every blob.
+func (m *MemBlobs) Clear() {
 	m.mu.Lock()
-	if _, exists := m.index[hash]; !exists {
-		m.index[hash] = m.lru.PushFront(&blobEntry{hash: hash, b: b})
-		m.used += int64(len(b))
-	}
-	m.mu.Unlock()
-	return b, true
+	defer m.mu.Unlock()
+	m.lru.Init()
+	m.index = make(map[string]*list.Element)
+	m.used = 0
+}
+
+// Len is the number of blobs held.
+func (m *MemBlobs) Len() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lru.Len()
+}
+
+// Bytes is the total size of the blobs held.
+func (m *MemBlobs) Bytes() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.used
 }

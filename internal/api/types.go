@@ -49,13 +49,11 @@ type Status struct {
 	FlowsTotal   int64     `json:"flows_total"`
 	LastFlowID   flow.ID   `json:"last_flow_id"`
 	ActiveConns  int       `json:"active_conns"`
-	Dropped      int64     `json:"dropped"`
 	CA           CAStatus  `json:"ca"`
 	SystemProxy  SysProxy  `json:"system_proxy"`
 	Rules        int       `json:"rules"`
 	RulesEnabled int       `json:"rules_enabled"`
 	Held         int       `json:"held"`
-	Persist      bool      `json:"persist"`
 	Decrypt      Decrypt   `json:"decrypt"`
 	Mobile       Mobile    `json:"mobile"`
 	Lifecycle    Lifecycle `json:"lifecycle"`

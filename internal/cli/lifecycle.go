@@ -277,11 +277,8 @@ func (a *App) renderStatus(st api.Status) {
 	if !st.Capturing {
 		cap = off + " paused"
 	}
-	a.printf("  capture      %s  session %q  %d flows in memory, %d total\n", cap, st.Session, st.Flows, st.FlowsTotal)
+	a.printf("  capture      %s  session %q  %d flows in memory (%d seen this run)\n", cap, st.Session, st.Flows, st.FlowsTotal)
 	a.printf("  rules        %d (%d enabled)  held %d  active conns %d\n", st.Rules, st.RulesEnabled, st.Held, st.ActiveConns)
-	if st.Dropped > 0 {
-		a.printf("  %s %d events dropped (store fell behind)\n", a.c(yellow, "!"), st.Dropped)
-	}
 	if !st.Redaction {
 		a.printf("  %s secret redaction is OFF\n", a.c(yellow, "!"))
 	}

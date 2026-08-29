@@ -20,8 +20,9 @@ CI runs the same on macOS (tests) and Linux (build). Coverage targets:
 ## Architecture in one paragraph
 
 One daemon (`internal/daemon`) owns the CA (`internal/ca`), the MITM engine
-(`internal/proxy`), capture storage (`internal/store`: ring + blobs + SQLite
-with FTS5), the rules engine (`internal/rules`) and the macOS system-proxy
+(`internal/proxy`), capture storage (`internal/store`: ring + blobs +
+WebSocket log + sessions, all in memory, nothing on disk — ADR 0011), the
+rules engine (`internal/rules`) and the macOS system-proxy
 manager (`internal/sysproxy` + crash-restore `internal/watchdog`). It serves a
 control API over `~/.pano/pano.sock` (`internal/control`). **The CLI
 (`internal/cli`), the MCP server (`internal/mcpserver`) and the TUI
@@ -38,8 +39,11 @@ changing boundaries.
 - **Never install the CA over MCP.** Terminal only (`pano ca install`).
 - **`pano_system_proxy` requires `confirm:"yes"`** and its description leads
   with "CHANGES macOS SYSTEM SETTINGS".
-- **The proxy hot path never blocks on storage.** The SQLite writer is
-  write-behind with a drop policy; dropped counts are surfaced, never hidden.
+- **Captures live in memory only and every daemon start begins empty**
+  (ADR 0011). No database, no retention, no persistence of flows, bodies,
+  WebSocket messages or sessions; the ring (`capture.ring_size`) and the
+  blob/WebSocket byte budgets are the only limits. Do not add a flow store
+  on disk. The proxy hot path never blocks on the store.
 - **Bodies are stored as raw wire bytes** (`Content-Encoding` preserved);
   decoding is lazy (`view.Decode`).
 - **Tunnels (undecrypted CONNECTs) stay visible in lists**, like every other

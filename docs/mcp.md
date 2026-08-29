@@ -101,8 +101,8 @@ Annotations: **RO** = `readOnlyHint: true, openWorldHint: false`;
 | `pano_decrypt` | Which HTTPS hosts are decrypted. | `action` = `status`\|`mode`\|`add`\|`remove`; `mode` (`all`\|`only`\|`off`); `list` (`only`\|`never`); `hosts[]` (bare host covers subdomains; globs; `"@rejected"` with `list=never` adds every host that recently refused the certificate) | `decrypt: <mode>` then `only:` / `never:` with every entry, and `rejected recently (…): host ×N` with the `@rejected` hint when present | M, idempotent |
 | `pano_system_proxy` | **Changes macOS system settings.** | `enabled`; `confirm` must be `"yes"` | `system proxy enabled=… set_by_pano=… <detail>` | `destructiveHint: true, openWorldHint: true` |
 
-Export only covers flows currently in the in-memory ring (the last 10 000
-by default), not the whole SQLite history.
+Export covers the flows currently in memory (the last 10 000 by default);
+pano keeps nothing on disk, so this is also all there is.
 
 ### Flags column
 

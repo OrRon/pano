@@ -14,7 +14,7 @@ Three processes, two links. The MCP server holds no state of its own.
 flowchart LR
     CC["Claude Code<br/>(client)"]
     MCP["pano mcp<br/>child of the client"]
-    D["pano daemon<br/>proxy :9091 · SQLite · rules"]
+    D["pano daemon<br/>proxy :9091 · in-memory store · rules"]
     O["origins"]
     CC -- "stdin/stdout<br/>JSON-RPC 2.0, one message per line" --> MCP
     MCP -- "HTTP/1.1 + JSON<br/>~/.pano/pano.sock (0600)" --> D
@@ -179,8 +179,8 @@ openWorldHint:true` — and it refuses without `confirm:"yes"`.
 3. The handler makes **one** HTTP request through `internal/client` —
    a normal Go `http.Client` whose dialer opens `~/.pano/pano.sock`
    instead of TCP. No token on the socket; file mode 0600 is the auth.
-4. The daemon's control API (`/v1/...`) does all the work: query the ring
-   or SQLite, render the view, enforce `max_bytes` and list limits,
+4. The daemon's control API (`/v1/...`) does all the work: query the
+   in-memory ring, render the view, enforce `max_bytes` and list limits,
    **redact secrets**, write audit lines. Envelope: `{ok:true, data}` or
    `{ok:false, error:{code, message, hint}}`.
 5. The handler formats text (`FormatRows`, `FormatStatus`, …), appends a

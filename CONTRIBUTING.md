@@ -19,7 +19,7 @@ Run a dev daemon in the foreground: `bin/pano start --foreground --port 9091`.
 
 - `cmd/pano` — the CLI entrypoint (cobra).
 - `internal/proxy`, `internal/ca` — the MITM engine and certificate authority.
-- `internal/store`, `internal/flow`, `internal/bus` — capture model, ring buffer, SQLite, events.
+- `internal/store`, `internal/flow`, `internal/bus` — capture model, in-memory ring, blobs, sessions, events.
 - `internal/rules` — live traffic rules and breakpoints.
 - `internal/control`, `internal/client`, `internal/api` — the control API the CLI and MCP server both use.
 - `internal/mcpserver`, `internal/view`, `internal/explain` — the agent-facing surface.

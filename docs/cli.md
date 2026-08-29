@@ -202,7 +202,7 @@ afterwards.
 
 | Flag | Matches |
 |---|---|
-| `--q TEXT` | full-text search over URL, headers and decoded text bodies (SQLite FTS5: whitespace-separated terms are ANDed, `foo*` is a prefix; over the in-memory ring, `tail` matches substrings of URL/headers/error) |
+| `--q TEXT` | case-insensitive substring search over URL, headers, error and decoded text bodies (up to 256 KiB per body); `tail` matches URL/headers/error only |
 | `--host GLOB` | host glob: `api.openai.com`, `*.googleapis.com` (`*` any run, `?` one char, case-insensitive) |
 | `--path P` | path prefix (`/v1/`), glob (`/v1/*/models`) |
 | `-m, --method GET,POST` | one or more methods |
@@ -418,7 +418,8 @@ Drop it; the client sees a connection reset.
 
 Sessions group flows; `new` ends the current one and becomes current;
 `rm` deletes a session and its flows (not the current one); `clear`
-forgets in-memory flows only (persisted history stays).
+forgets every captured flow. Sessions, like flows, live in memory and are
+gone when pano is turned off.
 
 ### `pano decrypt`
 

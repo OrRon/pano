@@ -32,7 +32,7 @@ func (s *Server) registerTools() {
 
 	mcp.AddTool(m, &mcp.Tool{
 		Name: "pano_flows",
-		Description: "List/search captured flows, newest first, ONE line each (~40 tokens/row). Filter by host glob, path prefix/glob, method, status (500, 4xx, 400-499, !2xx), since (15m, 2h, RFC3339, or a flow id), content_type (json|sse|html|js|img|bin), min_bytes, has_error, tag, rule, state (held|active|failed|replayed|mocked|blocked), or full-text q. " +
+		Description: "List/search captured flows, newest first, ONE line each (~40 tokens/row). Filter by host glob, path prefix/glob, method, status (500, 4xx, 400-499, !2xx), since (15m, 2h, RFC3339, or a flow id), content_type (json|sse|html|js|img|bin), min_bytes, has_error, tag, rule, state (held|active|failed|replayed|mocked|blocked), or text q (substring over url, headers and text bodies). " +
 			"Columns: id time meth host path status dur up down type flags (flags: llm stream err held mock replay trunc …). Use before pano_flow.",
 		Annotations: readOnly("pano flows"),
 		Meta:        meta("anthropic/alwaysLoad", true),
@@ -136,7 +136,7 @@ type captureIn struct {
 }
 
 type flowsIn struct {
-	Q           string   `json:"q,omitempty" jsonschema:"full-text search over url, headers and text bodies"`
+	Q           string   `json:"q,omitempty" jsonschema:"case-insensitive substring search over url, headers and decoded text bodies"`
 	Host        string   `json:"host,omitempty" jsonschema:"host glob, e.g. api.openai.com or *.googleapis.com"`
 	Path        string   `json:"path,omitempty" jsonschema:"path prefix or glob, e.g. /v1/* "`
 	Method      []string `json:"method,omitempty" jsonschema:"e.g. [\"POST\"]"`
@@ -306,11 +306,8 @@ func FormatStatus(st api.Status) string {
 	if st.CA.Warning != "" {
 		fmt.Fprintf(&b, "\nca warning: %s", st.CA.Warning)
 	}
-	fmt.Fprintf(&b, "\ncapturing: %v  session: %s  flows: %d in memory, %d total, last id %s", st.Capturing, st.Session, st.Flows, st.FlowsTotal, st.LastFlowID.Short())
+	fmt.Fprintf(&b, "\ncapturing: %v  session: %s  flows: %d in memory (%d seen since start; nothing is kept on disk), last id %s", st.Capturing, st.Session, st.Flows, st.FlowsTotal, st.LastFlowID.Short())
 	fmt.Fprintf(&b, "\nrules: %d (%d enabled)  held: %d  active conns: %d  redaction: %v", st.Rules, st.RulesEnabled, st.Held, st.ActiveConns, st.Redaction)
-	if st.Dropped > 0 {
-		fmt.Fprintf(&b, "\nWARNING: %d events dropped by the store", st.Dropped)
-	}
 	b.WriteString("\n" + FormatDecrypt(st.Decrypt))
 	b.WriteString("\n" + FormatMobile(st.Mobile))
 	return b.String()

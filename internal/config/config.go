@@ -17,7 +17,6 @@ type Config struct {
 	Proxy       Proxy       `toml:"proxy"`
 	Decrypt     Decrypt     `toml:"decrypt"`
 	Capture     Capture     `toml:"capture"`
-	Retention   Retention   `toml:"retention"`
 	Redaction   Redaction   `toml:"redaction"`
 	Views       Views       `toml:"views"`
 	Breakpoints Breakpoints `toml:"breakpoints"`
@@ -46,21 +45,15 @@ type Decrypt struct {
 	Never []string `toml:"never"`
 }
 
-// Capture configures what is recorded.
+// Capture configures what is recorded. Everything captured is held in
+// memory only: RingSize bounds how many flows are kept (oldest evicted) and
+// nothing survives a daemon restart.
 type Capture struct {
 	Enabled          bool  `toml:"enabled"`
 	MaxBodyBytes     int64 `toml:"max_body_bytes"`
 	MaxInflightBytes int64 `toml:"max_inflight_bytes"`
-	Persist          bool  `toml:"persist"`
 	WebSocketFrames  bool  `toml:"websocket_frames"`
 	RingSize         int   `toml:"ring_size"`
-}
-
-// Retention bounds the on-disk store.
-type Retention struct {
-	MaxAge     Duration `toml:"max_age"`
-	MaxFlows   int      `toml:"max_flows"`
-	MaxDBBytes int64    `toml:"max_db_bytes"`
 }
 
 // Redaction controls secret masking in views.
@@ -144,9 +137,8 @@ func Default() Config {
 		Decrypt: Decrypt{Mode: "all", Only: []string{}, Never: append([]string(nil), DefaultNever...)},
 		Capture: Capture{
 			Enabled: true, MaxBodyBytes: 4 << 20, MaxInflightBytes: 256 << 20,
-			Persist: true, WebSocketFrames: true, RingSize: 10000,
+			WebSocketFrames: true, RingSize: 10000,
 		},
-		Retention:   Retention{MaxAge: Duration{7 * 24 * time.Hour}, MaxFlows: 200_000, MaxDBBytes: 2 << 30},
 		Redaction:   Redaction{Enabled: true},
 		Views:       Views{DefaultMaxBytes: 4096, ListPageSize: 50, StringTruncate: 200},
 		Breakpoints: Breakpoints{HoldTimeout: Duration{120 * time.Second}},
@@ -209,9 +201,6 @@ func (p Paths) LeafKey() string { return filepath.Join(p.Dir, "leaf.key") }
 // CertCache holds minted leaf certificates.
 func (p Paths) CertCache() string { return filepath.Join(p.Dir, "certs") }
 
-// DB is the SQLite database.
-func (p Paths) DB() string { return filepath.Join(p.Dir, "pano.db") }
-
 // RulesFile persists rules.
 func (p Paths) RulesFile() string { return filepath.Join(p.Dir, "rules.json") }
 
@@ -254,6 +243,23 @@ func LoadWithWarnings(p Paths) (Config, []string, error) {
 		return cfg, nil, fmt.Errorf("config: parse %s: %w", p.ConfigFile(), err)
 	}
 	var warnings []string
+	{
+		// Flows stopped being written to disk in ADR 0011; the old keys are
+		// accepted and ignored so existing files keep loading.
+		var probe struct {
+			Retention *struct{} `toml:"retention"`
+			Capture   struct {
+				Persist *bool `toml:"persist"`
+			} `toml:"capture"`
+		}
+		_ = toml.Unmarshal(b, &probe)
+		if probe.Retention != nil {
+			warnings = append(warnings, "config: [retention] is ignored; flows are kept in memory only and gone when pano stops (see capture.ring_size)")
+		}
+		if probe.Capture.Persist != nil {
+			warnings = append(warnings, "config: capture.persist is ignored; flows are never written to disk any more")
+		}
+	}
 	if len(cfg.Proxy.Bypass) > 0 {
 		// Presence check: only migrate when the file has no [decrypt] table,
 		// otherwise the new key is authoritative.

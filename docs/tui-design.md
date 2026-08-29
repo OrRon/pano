@@ -117,7 +117,7 @@ number next to each name) · `⇥` next tab ·
 
 Filter syntax matches the CLI flags: `host=*.openai.com path=/v1/* method=POST
 status=!2xx since=15m type=json errors=1 state=held` plus bare words for
-full-text search.
+text search.
 
 The footer hints change with the tab: on Explain they lead with `1/2/3
 summary/request/response`, on Request/Response with `v view · H headers`;

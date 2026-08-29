@@ -24,14 +24,8 @@ never = ["*.push.apple.com", "*.icloud.com", "*.icloud-content.com",
 enabled = true
 max_body_bytes = 4194304
 max_inflight_bytes = 268435456
-persist = true
 websocket_frames = true
 ring_size = 10000
-
-[retention]
-max_age = "7d"
-max_flows = 200000
-max_db_bytes = 2147483648
 
 [redaction]
 enabled = true
@@ -93,26 +87,20 @@ or `/` fail validation.
 
 ### `[capture]`
 
+Everything captured is held in the daemon's memory and gone when it stops
+(ADR 0011); nothing is written to disk.
+
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `enabled` | bool | `true` | record flows at start. `pano_capture`/`POST /v1/capture` toggles at runtime; the proxy keeps forwarding when off. |
 | `max_body_bytes` | int | `4194304` (4 MiB) | per-body capture cap; larger bodies are forwarded in full but stored truncated (`trunc` flag). |
 | `max_inflight_bytes` | int | `268435456` (256 MiB) | total capture buffer budget across all in-flight exchanges; beyond it bodies are counted but not buffered. |
-| `persist` | bool | `true` | write flows and bodies to `pano.db`. With `false` only the in-memory ring exists (no `--q` search, no sessions history, no HAR history beyond the ring). |
-| `websocket_frames` | bool | `true` | parse and store WebSocket frames (`ws_messages`, `GET /v1/flows/{id}/ws`). Frames are forwarded verbatim either way. |
-| `ring_size` | int | `10000` | flows kept in memory (newest win). Lists, `pano tail`, replay summaries and HAR export read from this ring. |
+| `websocket_frames` | bool | `true` | parse and keep WebSocket messages (`GET /v1/flows/{id}/ws`; the newest 1 000 per flow, 64 MiB overall). Frames are forwarded verbatim either way. |
+| `ring_size` | int | `10000` | flows kept in memory; when full the oldest is evicted. Every list, search, replay summary and HAR export reads from this ring. Bodies live in a separate 256 MiB LRU, so a very old flow's body can be gone before the flow is. |
 
-### `[retention]`
-
-Enforced by a pruner that runs every minute.
-
-| Key | Type | Default | Meaning |
-|---|---|---|---|
-| `max_age` | duration | `"7d"` | delete flows older than this |
-| `max_flows` | int | `200000` | keep at most this many flows (oldest deleted) |
-| `max_db_bytes` | int | `2147483648` (2 GiB) | while `pano.db` is larger, drop the oldest 10 % of flows per round (up to 8 rounds), then vacuum |
-
-Zero disables a limit.
+The earlier keys `persist` and the whole `[retention]` table are accepted
+and ignored (with a warning in `pano config get` and the daemon log); a
+leftover `pano.db` is deleted the next time the daemon starts.
 
 ### `[redaction]`
 
@@ -187,7 +175,6 @@ back into pano).
 ├── ca.key               root private key (0600; generated per user on first run; refused if group/world readable)
 ├── leaf.key             shared private key of all minted leaf certificates (0600)
 ├── certs/<host>.pem     disk cache of minted leafs (30-day TTL)
-├── pano.db, -wal, -shm  SQLite store (flows, blobs, blob_text, ws_messages, sessions, flows_fts)
 ├── rules.json           persisted rules (0600, rewritten atomically on every change)
 ├── sysproxy.json        macOS proxy snapshot; exists only while pano owns the system proxy
 └── update-check.json    when the release check last ran and what it found (0600)

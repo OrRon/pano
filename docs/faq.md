@@ -184,15 +184,20 @@ The process is using pano as a proxy but does not trust the CA:
 The proxy is a single static Go binary with streaming bodies, a shared
 upstream connection pool (h1+h2, 64 idle conns per host), pooled 32 KiB copy
 buffers and a lock-free rule set. Captured bytes are teed into a bounded
-buffer and handed to a write-behind SQLite writer that batches ≤ 256 events
-per 50 ms and never blocks the proxy (it drops and counts instead:
-`pano status` shows `N events dropped (store fell behind)`). Bodies larger
-than `[capture] max_body_bytes` (4 MiB) are forwarded in full but stored
+buffer and kept in memory only — a ring of the last 10 000 flows and a
+256 MiB body cache — so nothing ever waits on disk. Bodies larger than
+`[capture] max_body_bytes` (4 MiB) are forwarded in full but stored
 truncated. Server-sent events are flushed per read, so LLM token streams
 arrive with no added buffering. Expect sub-millisecond added latency per
-request on a laptop and thousands of requests per second before the store
-starts dropping; the first request to a new host pays for one certificate
-mint (cached in memory and on disk afterwards).
+request on a laptop; the first request to a new host pays for one
+certificate mint (cached in memory and on disk afterwards).
+
+## Where is my history from yesterday?
+
+Gone, by design. pano keeps everything in memory and starts empty every
+time it is turned on (ADR 0011): there is no database, no retention policy
+and nothing to clean up. Export what you want to keep with `pano export
+har` before turning pano off.
 
 ## How is this different from mitmproxy, Proxyman or Charles?
 
@@ -204,7 +209,7 @@ server designed around token budgets (one-line flow lists, summary/schema
 views, JSON-path selection, LLM stream reassembly into final message and
 usage, `next:` hints), plus a CLI for humans, and it lets agents install
 live rules (latency, failure rates, mocks, rewrites, breakpoints) over the
-same API. It persists to SQLite with full-text search, handles HTTP/2,
+same API. It keeps captures in memory only (text search included), handles HTTP/2,
 WebSocket and SSE, and is pre-1.0 and macOS-first, with a smaller feature
 surface than any of the three (no scripting language, no HAR viewer).
 Phones are covered — `pano mobile` — with a setup page that ticks steps off

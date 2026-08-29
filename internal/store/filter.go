@@ -1,16 +1,25 @@
 package store
 
 import (
+	"errors"
 	"net"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/orron/pano/internal/api"
 	"github.com/orron/pano/internal/flow"
 	"github.com/orron/pano/internal/glob"
 	"github.com/orron/pano/internal/mimeclass"
 )
+
+// SearchTextCap bounds how many decoded body bytes a text search (Q) looks
+// at per body.
+const SearchTextCap = 256 << 10
+
+// BodyFunc fetches the raw wire bytes of a body by reference.
+type BodyFunc func(flow.BodyRef) ([]byte, bool)
 
 // Matcher is a compiled FlowFilter.
 type Matcher struct {
@@ -22,6 +31,14 @@ type Matcher struct {
 	statusFn func(int) bool
 	methods  map[string]bool
 	ctClass  string
+	bodies   BodyFunc
+}
+
+// WithBodies makes Q also search decoded textual bodies fetched through fn.
+// Without it Q matches URL, headers and the error only.
+func (m *Matcher) WithBodies(fn BodyFunc) *Matcher {
+	m.bodies = fn
+	return m
 }
 
 // Compile prepares a filter. now anchors relative times.
@@ -52,8 +69,9 @@ func Compile(f api.FlowFilter, now time.Time) *Matcher {
 	return m
 }
 
-// Match reports whether fl satisfies the filter (excluding full-text search
-// over bodies, which the SQLite layer handles; here Q matches URL + headers).
+// Match reports whether fl satisfies the filter. Q is a case-insensitive
+// substring match over URL, headers and error, and over decoded textual
+// bodies when WithBodies was set.
 func (m *Matcher) Match(fl *flow.Flow) bool {
 	f := &m.f
 	if m.sinceID != 0 && fl.ID <= m.sinceID {
@@ -104,10 +122,50 @@ func (m *Matcher) Match(fl *flow.Flow) bool {
 	if m.ctClass != "" && !matchCT(m.ctClass, fl) {
 		return false
 	}
-	if m.q != "" && !matchQ(m.q, fl) {
+	if m.q != "" && !matchQ(m.q, fl) && !m.matchBody(fl) {
 		return false
 	}
 	return true
+}
+
+func (m *Matcher) matchBody(fl *flow.Flow) bool {
+	if m.bodies == nil {
+		return false
+	}
+	for _, ref := range []flow.BodyRef{fl.ReqBody, fl.RespBody} {
+		if txt, ok := BodyText(ref, m.bodies); ok && strings.Contains(strings.ToLower(txt), m.q) {
+			return true
+		}
+	}
+	return false
+}
+
+// BodyText returns the searchable text of a body: the decoded bytes when the
+// MIME class is textual, they decode and are valid UTF-8, capped at
+// SearchTextCap. Anything else yields false.
+func BodyText(ref flow.BodyRef, bodies BodyFunc) (string, bool) {
+	if ref.Hash == "" || bodies == nil || !mimeclass.IsTextual(mimeclass.Of(ref.MIME)) {
+		return "", false
+	}
+	raw, ok := bodies(ref)
+	if !ok {
+		return "", false
+	}
+	dec, err := DecodeBody(ref.Encoding, raw, SearchTextCap)
+	if err != nil && !errors.Is(err, ErrDecodeLimit) {
+		return "", false
+	}
+	if len(dec) > SearchTextCap {
+		dec = dec[:SearchTextCap]
+	}
+	for len(dec) > 0 && !utf8.Valid(dec) {
+		// Trim a rune cut in half by the cap; anything else is binary.
+		if len(dec) < SearchTextCap {
+			return "", false
+		}
+		dec = dec[:len(dec)-1]
+	}
+	return string(dec), true
 }
 
 // MatchClient compares a filter value with a flow's client address

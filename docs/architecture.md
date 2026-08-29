@@ -25,7 +25,7 @@ the daemon.
                                    │  control API  /v1/*     │
                                    │  proxy  127.0.0.1:9091  │──▶ origins
                                    │    + <lan-ip>:9091 while `pano mobile` is on
-                                   │  store  ~/.pano/pano.db │
+                                   │  store  in memory only  │
                                    │  rules  ~/.pano/rules.json
                                    │  sysproxy snapshot      │
                                    └─────────────────────────┘
@@ -66,7 +66,7 @@ the daemon.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/v1/status` | daemon, capture, CA, system-proxy state |
-| GET | `/v1/stats` | counters (memory ring, SQLite writer, bus) |
+| GET | `/v1/stats` | counters (memory ring, blobs, WebSocket log, sessions, bus) |
 | POST | `/v1/capture` | `start`, `stop`, `clear`, `session` |
 | GET/POST | `/v1/sessions`, DELETE `/v1/sessions/{id}` | session CRUD |
 | GET | `/v1/flows` | list/search (query params = filter fields) |
@@ -182,37 +182,34 @@ bound.
 ```
 proxy ──Sink──▶ daemon.Started/Updated/Done ──▶ Mem ring (10k flows, newest-first iteration)
                                              └─▶ bus.Publish(Event)
-                                                    ├─▶ SQLite subscriber ──queue(8192)──▶ writer goroutine
-                                                    │       batches ≤256 items / 50 ms → one transaction
-                                                    │       flows upsert · blobs · ws_messages · FTS5 rows
                                                     ├─▶ /v1/events SSE clients (pano tail)
                                                     └─▶ /v1/tail long-poll waiters (pano_tail)
-proxy ──Sink.Blob(bytes)──▶ MemBlobs (content-addressed sha256, 256 MiB LRU) ──▶ SQLite.PutBlob (queued)
+proxy ──Sink.Blob(bytes)──▶ MemBlobs (content-addressed sha256, 256 MiB LRU)
+proxy ──Sink.WS(msg)──────▶ WSLog (per-flow message log, 1000 msgs/flow, 64 MiB)
 ```
 
+Everything captured lives in the daemon's memory and is gone when it stops
+(ADR 0011). Nothing is written to disk: no database, no retention, no
+history from a previous run. `pano on` always starts empty.
+
 - **Sink** (`proxy.Sink`) is implemented by the daemon: every event goes to
-  the in-memory ring first, so reads never wait for disk.
+  the in-memory ring, so reads never wait on anything.
 - **Event bus** (`internal/bus`): fan-out with a bounded queue per
   subscriber. When a subscriber's queue is full the oldest event is
   dropped and a single coalesced `dropped` event is delivered in front, so a
   slow consumer never stalls the proxy.
-- **SQLite** (`internal/store/sqlite*.go`, pure-Go `modernc.org/sqlite`,
-  WAL, one writer connection + a read-only pool): ingestion is
-  **write-behind**. `Enqueue` never blocks; a full queue drops the item and
-  increments the `dropped` counter that `pano status` and `pano_status`
-  surface as a warning. Blobs are deduplicated by hash with trigger-maintained
-  reference counts; `blob_text` caches the decoded UTF-8 text of textual
-  blobs; a contentless **FTS5** table indexes host, path, headers and up to
-  256 KiB of decoded text per body for finished flows (`--q` / `q=`).
-- **Reads**: lists come from the ring unless the filter needs the database
-  (`q=`, a non-current `session=`, or nothing matched in memory). Single
-  flows are looked up in the ring, then SQLite.
-- **Retention**: a pruner runs every minute enforcing `[retention]`
-  `max_age` / `max_flows` / `max_db_bytes`, deletes orphan blobs, runs
-  `incremental_vacuum` and checkpoints the WAL. Flows still `active`/`held`
-  from a previous process are marked `failed ("daemon restarted")` on open.
-- **Sessions** group flows; the current session id is stamped on every new
-  flow. `pano session new` ends the previous one.
+- **Ring** (`store.Mem`, `[capture] ring_size`, default 10 000): when full,
+  the oldest flow is evicted and its WebSocket messages go with it. **Blobs**
+  (`store.MemBlobs`) are deduplicated by sha256 and bounded by a 256 MiB LRU
+  budget, so the bodies of the least recently viewed flows can disappear
+  before the flows themselves do (the flow still lists; its body is just
+  unavailable).
+- **Reads**: every list, search and lookup is a scan of the ring. `--q` /
+  `q=` is a case-insensitive substring match over URL, headers, error and up
+  to 256 KiB of decoded text per textual body (`store.BodyText`).
+- **Sessions** (`store.Sessions`) group flows; the current session id is
+  stamped on every new flow. `pano session new` ends the previous one,
+  `pano session rm` deletes a session together with its flows.
 
 ## Rules engine
 
@@ -318,7 +315,6 @@ is built around the assumption that the reader pays per token:
 | `ca.pem` / `ca.key` | 0644 / 0600 | root certificate and its private key (never served, never logged) |
 | `leaf.key` | 0600 | the single private key shared by all minted leaf certificates |
 | `certs/<host>.pem` | 0600 | disk cache of minted leafs |
-| `pano.db` (+ `-wal`, `-shm`) | | SQLite: `flows`, `blobs`, `blob_text`, `ws_messages`, `sessions`, `flows_fts` |
 | `rules.json` | 0600 | persisted rules |
 | `sysproxy.json` | 0600 | system-proxy snapshot; exists only while pano owns the system proxy |
 | `audit.log` | 0600 | one line per `reveal_secrets` use and system-proxy toggle |
@@ -340,7 +336,7 @@ client at a different socket.
 | `internal/ca` | root CA, leaf minting, LRU/disk cache, macOS keychain trust |
 | `internal/flow` | data model (`Flow`, `BodyRef`, `Timing`, `RuleHit`, events) and IDs |
 | `internal/bus` | fan-out event bus with drop-oldest queues |
-| `internal/store` | memory ring, blob cache, filters, SQLite write-behind + FTS5, retention, sessions, HAR-free row rendering |
+| `internal/store` | memory ring, blob cache, WebSocket message log, sessions, filters and text search, row rendering — all in memory, nothing on disk |
 | `internal/rules` | live rules, presets, breakpoints, throttling, body rewrites |
 | `internal/view` | summary/schema/truncated/pretty/raw, gjson path, redaction, diffs |
 | `internal/explain` | LLM provider detection and SSE reassembly into digests |

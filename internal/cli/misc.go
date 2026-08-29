@@ -54,7 +54,7 @@ func (a *App) cmdSession() *cobra.Command {
 		},
 	}
 	clear := &cobra.Command{
-		Use: "clear", Short: "Forget all flows in memory (keeps persisted history)",
+		Use: "clear", Short: "Forget every captured flow",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if _, err := a.client().Capture(cmd.Context(), api.CaptureRequest{Action: "clear"}); err != nil {
 				return err
@@ -260,9 +260,6 @@ func (a *App) cmdDoctor() *cobra.Command {
 						a.printf("%s system proxy → pano (%s)\n", ok(true), st.SystemProxy.Detail)
 					} else {
 						a.printf("%s system proxy off (use `pano on` or `pano run -- cmd`)\n", a.c(dim, "info"))
-					}
-					if st.Dropped > 0 {
-						a.printf("%s %d events dropped by the store\n", a.c(yellow, "warn"), st.Dropped)
 					}
 					a.printf("%s %s\n", ok(true), a.renderDecrypt(st.Decrypt, "     ", time.Now())[5:])
 					if n := len(st.Decrypt.Rejected); n > 0 {

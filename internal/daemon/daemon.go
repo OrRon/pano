@@ -8,11 +8,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/orron/pano/internal/api"
@@ -56,7 +56,8 @@ type Daemon struct {
 	bus    *bus.Bus
 	mem    *store.Mem
 	blobs  *store.MemBlobs
-	db     *store.SQLite
+	ws     *store.WSLog
+	sess   *store.Sessions
 	ids    *flow.IDGen
 	rules  *rules.Engine
 	proxy  *proxy.Server
@@ -73,7 +74,6 @@ type Daemon struct {
 	mobileLAN  mobile.LAN
 	mobileLast string // address of the last closed listener
 
-	session   atomic.Value // string
 	cancel    context.CancelFunc
 	ctx       context.Context // run's context; done once shutdown has begun
 	wg        sync.WaitGroup
@@ -114,7 +114,6 @@ func build(opts Options) (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{opts: opts, cfg: cfg, paths: opts.Paths, log: logger, started: time.Now()}
-	d.session.Store("default")
 
 	var err error
 	d.ca, err = ca.Load(ca.Options{
@@ -138,24 +137,14 @@ func build(opts Options) (*Daemon, error) {
 		view.Extra.Patterns = append(view.Extra.Patterns, re)
 	}
 	d.bus = bus.New()
+	// Everything captured lives in memory and dies with the daemon (ADR 0011).
 	d.mem = store.NewMem(cfg.Capture.RingSize)
 	d.blobs = store.NewMemBlobs(256 << 20)
-
-	var lastID flow.ID
-	if cfg.Capture.Persist {
-		d.db, err = store.OpenSQLite(store.SQLiteOptions{Path: d.paths.DB(), Logger: logger})
-		if err != nil {
-			return nil, err
-		}
-		d.blobs.Persister = d.db
-		if id, err := d.db.MaxID(); err == nil {
-			lastID = id
-		}
-		if s, err := d.db.CurrentSession(context.Background()); err == nil {
-			d.session.Store(s.ID)
-		}
-	}
-	d.ids = flow.NewIDGen(lastID)
+	d.ws = store.NewWSLog(0, 0)
+	d.mem.OnEvict = func(f *flow.Flow) { d.ws.Drop(f.ID) }
+	d.sess = store.NewSessions()
+	d.ids = flow.NewIDGen(0)
+	removeLegacyDB(d.paths, logger)
 
 	d.rules, err = rules.New(rules.Options{
 		PersistPath: d.paths.RulesFile(), HoldTimeout: cfg.Breakpoints.HoldTimeout.Duration,
@@ -183,7 +172,7 @@ func build(opts Options) (*Daemon, error) {
 		MaxBody: cfg.Capture.MaxBodyBytes, MaxInflight: cfg.Capture.MaxInflightBytes, MaxConns: cfg.Limits.MaxConns,
 		Decrypt:   proxy.DecryptPolicy{Mode: proxy.DecryptMode(cfg.Decrypt.Mode), Only: cfg.Decrypt.Only, Never: cfg.Decrypt.Never},
 		CaptureWS: cfg.Capture.WebSocketFrames,
-		Session:   func() string { s, _ := d.session.Load().(string); return s },
+		Session:   d.sess.CurrentID,
 		IDs:       d.ids, Logger: logger, CAPEM: d.ca.CertPEM(), Local: d.site,
 	})
 	d.proxy.SetCapturing(cfg.Capture.Enabled)
@@ -211,10 +200,6 @@ func (d *Daemon) run(parent context.Context) error {
 	}
 	if err := d.ctl.ListenUnix(d.paths.Socket()); err != nil {
 		return err
-	}
-	if d.db != nil {
-		d.db.Subscribe(d.bus)
-		d.db.StartPruner(ctx, time.Minute, d.cfg.Retention.MaxAge.Duration, d.cfg.Retention.MaxFlows, d.cfg.Retention.MaxDBBytes)
 	}
 	_ = os.WriteFile(d.paths.PIDFile(), []byte(strconv.Itoa(os.Getpid())), 0o600)
 
@@ -285,10 +270,6 @@ func (d *Daemon) shutdown() error {
 		_ = d.proxy.Close()
 	}
 	dcancel()
-	if d.db != nil {
-		_ = d.db.Flush(sctx)
-		_ = d.db.Close()
-	}
 	_ = d.rules.Close()
 	// The control listener unlinks its socket on Close. Only remove the pid
 	// file if it is still ours: a replacement daemon may already be running.
@@ -329,7 +310,20 @@ func (d *Daemon) Blob(b []byte) string { return d.blobs.Put(b) }
 
 // WS implements proxy.Sink.
 func (d *Daemon) WS(m *flow.WSMessage) {
+	d.ws.Add(m)
 	d.bus.Publish(flow.Event{Type: flow.EvWS, WS: m})
+}
+
+// removeLegacyDB deletes the SQLite database earlier releases kept under the
+// pano home. Flows are in memory only now (ADR 0011); the file would
+// otherwise sit there, up to gigabytes, forever.
+func removeLegacyDB(p config.Paths, log *slog.Logger) {
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		path := filepath.Join(p.Dir, "pano.db"+suffix)
+		if err := os.Remove(path); err == nil {
+			log.Info("removed legacy database file", "path", path)
+		}
+	}
 }
 
 // Audit appends a line to the audit log.

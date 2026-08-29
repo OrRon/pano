@@ -3,11 +3,14 @@ package daemon
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -28,7 +31,6 @@ func startDaemon(t *testing.T) (*client.Client, config.Paths) {
 	cfg := config.Default()
 	cfg.Proxy.Port = 0
 	cfg.Proxy.MCPPort = 0
-	cfg.Capture.Persist = true
 	cfg.SystemProxy.RestoreOnExit = false
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -221,15 +223,27 @@ func TestDaemonEndToEnd(t *testing.T) {
 		t.Fatalf("status: %v %+v", err, st)
 	}
 
-	// Sessions + search over persisted store.
+	// Sessions + text search over the in-memory ring.
 	sess, err := c.StartSession(ctx, "second")
 	if err != nil || sess.Name != "second" {
 		t.Fatalf("session: %v %+v", err, sess)
 	}
-	time.Sleep(200 * time.Millisecond) // let the writer flush
 	fl, err := c.Flows(ctx, api.FlowFilter{Q: "tailed"})
 	if err != nil || fl.Total == 0 {
-		t.Fatalf("fts search: %v %+v", err, fl)
+		t.Fatalf("text search: %v %+v", err, fl)
+	}
+	ss, err := c.Sessions(ctx)
+	if err != nil || len(ss) != 2 || !ss[0].Current || ss[0].ID != sess.ID {
+		t.Fatalf("sessions: %v %+v", err, ss)
+	}
+	if err := c.DeleteSession(ctx, sess.ID); err == nil {
+		t.Fatal("deleting the current session must fail")
+	}
+	if err := c.DeleteSession(ctx, ss[1].ID); err != nil {
+		t.Fatalf("delete session: %v", err)
+	}
+	if st, _ := c.Status(ctx); st.Flows != 0 {
+		t.Fatalf("flows after deleting their session = %d, want 0", st.Flows)
 	}
 }
 
@@ -238,4 +252,23 @@ func orNull(b []byte) string {
 		return "null"
 	}
 	return string(b)
+}
+
+func TestRemoveLegacyDB(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"pano.db", "pano.db-wal", "pano.db-shm", "rules.json"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removeLegacyDB(config.Paths{Dir: dir}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	for _, name := range []string{"pano.db", "pano.db-wal", "pano.db-shm"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s still there: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "rules.json")); err != nil {
+		t.Fatalf("rules.json must be untouched: %v", err)
+	}
+	removeLegacyDB(config.Paths{Dir: dir}, slog.New(slog.NewTextHandler(io.Discard, nil))) // idempotent
 }

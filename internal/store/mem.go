@@ -7,7 +7,8 @@ import (
 )
 
 // Mem is a fixed-size ring of flow snapshots, newest last. Flows are
-// immutable snapshots; Upsert replaces by ID.
+// immutable snapshots; Upsert replaces by ID. When the ring is full the
+// oldest flow is evicted to make room.
 type Mem struct {
 	mu    sync.RWMutex
 	ring  []*flow.Flow
@@ -15,6 +16,11 @@ type Mem struct {
 	count int
 	byID  map[flow.ID]int // id -> ring index
 	total int64
+
+	// OnEvict, if set, is called (without the lock held) for every flow that
+	// leaves the ring — capacity eviction, Delete and Clear — so dependent
+	// per-flow state (WebSocket messages) can be released with it.
+	OnEvict func(*flow.Flow)
 }
 
 // NewMem creates a ring holding at most size flows.
@@ -28,15 +34,16 @@ func NewMem(size int) *Mem {
 // Upsert stores a snapshot.
 func (m *Mem) Upsert(f *flow.Flow) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if idx, ok := m.byID[f.ID]; ok {
 		m.ring[idx] = f
+		m.mu.Unlock()
 		return
 	}
+	var evicted *flow.Flow
 	if m.count == len(m.ring) {
-		old := m.ring[m.head]
-		if old != nil {
-			delete(m.byID, old.ID)
+		evicted = m.ring[m.head]
+		if evicted != nil {
+			delete(m.byID, evicted.ID)
 		}
 	} else {
 		m.count++
@@ -45,6 +52,11 @@ func (m *Mem) Upsert(f *flow.Flow) {
 	m.byID[f.ID] = m.head
 	m.head = (m.head + 1) % len(m.ring)
 	m.total++
+	fn := m.OnEvict
+	m.mu.Unlock()
+	if evicted != nil && fn != nil {
+		fn(evicted)
+	}
 }
 
 // Get returns a flow by ID.
@@ -65,6 +77,9 @@ func (m *Mem) Len() int {
 	return m.count
 }
 
+// Cap is the ring size.
+func (m *Mem) Cap() int { return len(m.ring) }
+
 // Total is the number of distinct flows ever inserted.
 func (m *Mem) Total() int64 {
 	m.mu.RLock()
@@ -74,13 +89,59 @@ func (m *Mem) Total() int64 {
 
 // Clear empties the ring.
 func (m *Mem) Clear() {
+	m.Delete(func(*flow.Flow) bool { return true })
+}
+
+// Delete removes every flow for which match returns true and reports how many
+// were removed. Order and IDs of the remaining flows are preserved.
+func (m *Mem) Delete(match func(*flow.Flow) bool) int {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	for i := range m.ring {
-		m.ring[i] = nil
+	n := len(m.ring)
+	var keep, gone []*flow.Flow
+	for i := m.count; i >= 1; i-- { // oldest first
+		f := m.ring[((m.head-i)%n+n)%n]
+		if f == nil {
+			continue
+		}
+		if match(f) {
+			gone = append(gone, f)
+		} else {
+			keep = append(keep, f)
+		}
 	}
-	m.byID = make(map[flow.ID]int, len(m.ring))
-	m.head, m.count = 0, 0
+	if len(gone) > 0 {
+		for i := range m.ring {
+			m.ring[i] = nil
+		}
+		m.byID = make(map[flow.ID]int, n)
+		m.head, m.count = 0, 0
+		for _, f := range keep {
+			m.ring[m.head] = f
+			m.byID[f.ID] = m.head
+			m.head = (m.head + 1) % n
+			m.count++
+		}
+	}
+	fn := m.OnEvict
+	m.mu.Unlock()
+	if fn != nil {
+		for _, f := range gone {
+			fn(f)
+		}
+	}
+	return len(gone)
+}
+
+// Count returns how many flows satisfy match.
+func (m *Mem) Count(match func(*flow.Flow) bool) int {
+	n := 0
+	m.Each(func(f *flow.Flow) bool {
+		if match(f) {
+			n++
+		}
+		return true
+	})
+	return n
 }
 
 // Each visits flows newest first until fn returns false.

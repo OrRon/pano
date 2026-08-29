@@ -23,8 +23,9 @@ token-efficient views, and through a CLI for humans.
 - **A terminal UI that doesn't look like a terminal UI**: `pano ui` — live
   list, detail views, explain, diff, rules and breakpoints, designed rather
   than default.
-- **Fast**: single static Go binary, streaming bodies, zero-copy passthrough,
-  write-behind SQLite with full-text search.
+- **Fast and forgetful**: single static Go binary, streaming bodies,
+  zero-copy passthrough, everything captured kept in memory — nothing on
+  disk, every `pano on` starts empty.
 
 > pano is a man-in-the-middle proxy for **your own machine**. Trusting its CA lets
 > software on this Mac decrypt this Mac's traffic. See
@@ -387,8 +388,8 @@ never downloads or installs anything. `PANO_NO_UPDATE_CHECK=1`,
 Apple M-series, 64 concurrent clients, small JSON responses, capture on
 (`bench/run.sh`): **~70k req/s through pano vs ~146k direct, p50 added latency
 ≈ 0.4 ms, p99 ≈ 3 ms**. Bodies stream through unbuffered (SSE tokens arrive
-live); persistence is write-behind and drops under sustained overload rather
-than slowing the proxy.
+live); captures are kept in memory only, so the proxy never waits on
+storage.
 
 ## Status
 

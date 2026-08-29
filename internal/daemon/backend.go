@@ -47,42 +47,29 @@ func (d *Daemon) Status(ctx context.Context) api.Status {
 		},
 		SystemProxy: d.SysProxy(ctx), Rules: len(rules), RulesEnabled: enabled, Held: len(d.rules.Held()),
 		Lifecycle: d.Lifecycle(),
-		Persist:   d.db != nil, Decrypt: d.Decrypt(ctx), Mobile: d.Mobile(ctx), Redaction: d.cfg.Redaction.Enabled, BusSeq: d.bus.Seq(), StartedAt: d.started,
+		Decrypt:   d.Decrypt(ctx), Mobile: d.Mobile(ctx), Redaction: d.cfg.Redaction.Enabled, BusSeq: d.bus.Seq(), StartedAt: d.started,
 	}
 	if d.mcpLn != nil {
 		st.MCPAddr = d.mcpLn.Addr().String()
-	}
-	if d.db != nil {
-		st.Dropped = d.db.Dropped()
-		if s, err := d.db.Stats(ctx); err == nil {
-			if n, ok := s["flows"]; ok {
-				st.FlowsTotal = n
-			}
-		}
 	}
 	return st
 }
 
 // Stats implements control.Backend.
-func (d *Daemon) Stats(ctx context.Context) api.Stats {
-	s := api.Stats{"mem_flows": int64(d.mem.Len()), "mem_total": d.mem.Total(), "active_conns": int64(d.proxy.ActiveConns()), "bus_seq": int64(d.bus.Seq())} //nolint:gosec // counters
-	if d.db != nil {
-		if m, err := d.db.Stats(ctx); err == nil {
-			for k, v := range m {
-				s["db_"+k] = v
-			}
-		}
+func (d *Daemon) Stats(context.Context) api.Stats {
+	wsFlows, wsMsgs, wsBytes := d.ws.Stats()
+	return api.Stats{ //nolint:gosec // counters
+		"mem_flows": int64(d.mem.Len()), "mem_cap": int64(d.mem.Cap()), "mem_total": d.mem.Total(),
+		"blobs": int64(d.blobs.Len()), "blob_bytes": d.blobs.Bytes(),
+		"ws_flows": int64(wsFlows), "ws_messages": int64(wsMsgs), "ws_bytes": wsBytes,
+		"sessions": int64(len(d.sess.List(nil))), "active_conns": int64(d.proxy.ActiveConns()), "bus_seq": int64(d.bus.Seq()),
 	}
-	return s
 }
 
 // Bus implements control.Backend.
 func (d *Daemon) Bus() *bus.Bus { return d.bus }
 
-func (d *Daemon) currentSession() string {
-	s, _ := d.session.Load().(string)
-	return s
-}
+func (d *Daemon) currentSession() string { return d.sess.CurrentID() }
 
 // Capture implements control.Backend.
 func (d *Daemon) Capture(ctx context.Context, req api.CaptureRequest) (api.Status, error) {
@@ -93,6 +80,8 @@ func (d *Daemon) Capture(ctx context.Context, req api.CaptureRequest) (api.Statu
 		d.proxy.SetCapturing(false)
 	case "clear":
 		d.mem.Clear()
+		d.ws.Clear()
+		d.blobs.Clear()
 	case "session":
 		if req.Name == "" {
 			return api.Status{}, api.BadRequest("session name required")
@@ -107,36 +96,30 @@ func (d *Daemon) Capture(ctx context.Context, req api.CaptureRequest) (api.Statu
 }
 
 // Sessions implements control.Backend.
-func (d *Daemon) Sessions(ctx context.Context) ([]api.Session, error) {
-	if d.db == nil {
-		return []api.Session{{ID: d.currentSession(), Name: d.currentSession(), StartedAt: d.started, Flows: d.mem.Len(), Current: true}}, nil
-	}
-	return d.db.Sessions(ctx)
+func (d *Daemon) Sessions(context.Context) ([]api.Session, error) {
+	return d.sess.List(func(id string) int {
+		return d.mem.Count(func(f *flow.Flow) bool { return f.Session == id })
+	}), nil
 }
 
 // StartSession implements control.Backend.
-func (d *Daemon) StartSession(ctx context.Context, name string) (api.Session, error) {
-	if d.db == nil {
-		d.session.Store(name)
-		return api.Session{ID: name, Name: name, StartedAt: time.Now(), Current: true}, nil
-	}
-	s, err := d.db.StartSession(ctx, name)
-	if err != nil {
-		return s, err
-	}
-	d.session.Store(s.ID)
-	return s, nil
+func (d *Daemon) StartSession(_ context.Context, name string) (api.Session, error) {
+	return d.sess.Start(name), nil
 }
 
-// DeleteSession implements control.Backend.
-func (d *Daemon) DeleteSession(ctx context.Context, id string) error {
-	if d.db == nil {
-		return api.ErrUnsupported
-	}
-	if id == d.currentSession() {
+// DeleteSession implements control.Backend: forgets the session and every
+// flow captured under it.
+func (d *Daemon) DeleteSession(_ context.Context, id string) error {
+	switch err := d.sess.Delete(id); {
+	case errors.Is(err, store.ErrCurrent):
 		return api.BadRequest("cannot delete the current session")
+	case errors.Is(err, store.ErrNotFound):
+		return api.NotFound("session", id)
+	case err != nil:
+		return err
 	}
-	return d.db.DeleteSession(ctx, id)
+	d.mem.Delete(func(f *flow.Flow) bool { return f.Session == id })
+	return nil
 }
 
 // ListFlows implements control.Backend.
@@ -145,29 +128,12 @@ func (d *Daemon) ListFlows(ctx context.Context, f api.FlowFilter) (api.FlowList,
 	if limit <= 0 {
 		limit = d.cfg.Views.ListPageSize
 	}
-	useDB := d.db != nil && (f.Q != "" || f.Session != "" && f.Session != d.currentSession())
-	if !useDB {
-		list := store.Query(d.mem, f, limit, time.Now())
-		if list.Total > 0 || d.db == nil {
-			return list, nil
-		}
-		useDB = true
-	}
-	if useDB {
-		return d.db.Query(ctx, f, limit, time.Now())
-	}
-	return api.FlowList{}, nil
+	return store.Query(d.mem, f, limit, time.Now(), d.body), nil
 }
 
-func (d *Daemon) getFlow(ctx context.Context, id flow.ID) (*flow.Flow, error) {
+func (d *Daemon) getFlow(_ context.Context, id flow.ID) (*flow.Flow, error) {
 	if f, ok := d.mem.Get(id); ok {
 		return f, nil
-	}
-	if d.db != nil {
-		f, err := d.db.Get(ctx, id)
-		if err == nil {
-			return f, nil
-		}
 	}
 	return nil, api.NotFound("flow", id.Short())
 }
@@ -336,10 +302,10 @@ func (d *Daemon) Body(ctx context.Context, id flow.ID, part string, decode bool)
 
 // WSMessages implements control.Backend.
 func (d *Daemon) WSMessages(ctx context.Context, id flow.ID, limit int) ([]flow.WSMessage, error) {
-	if d.db == nil {
-		return nil, api.ErrUnsupported
+	if _, err := d.getFlow(ctx, id); err != nil {
+		return nil, err
 	}
-	return d.db.WSMessages(ctx, id, limit)
+	return d.ws.Messages(id, limit), nil
 }
 
 // Replay implements control.Backend. The request is sent through the proxy
