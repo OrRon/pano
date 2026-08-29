@@ -1,4 +1,5 @@
 <p align="center">
+  <img src="docs/assets/mascot.svg" alt="" width="110"><br>
   <img src="docs/assets/logo.png" alt="pano" width="420">
 </p>
 
