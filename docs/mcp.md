@@ -48,8 +48,8 @@ the loopback bind, so disable it (`expose_http = false`) if other local
 users share the machine.
 
 `pano mcp` **never starts the daemon** — pano is only on between `pano on`
-(or `pano start`) and `pano off` (or `pano stop`), and only the user runs
-those. Claude Code spawns `pano mcp` once per session, so the server stays up
+(or `pano start`) and `pano off` (or `pano stop`, or quitting the UI that
+`pano on` opened — ADR 0009), and only the user runs those. Claude Code spawns `pano mcp` once per session, so the server stays up
 regardless and, while the daemon is down, every tool returns `isError` with
 *"pano is off: … ask the user to run `pano on`"*; resources fail with the same
 message. Each call dials `~/.pano/pano.sock` fresh, so the tools work again

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,13 +21,50 @@ type fakeBackend struct {
 	Backend
 	b     *bus.Bus
 	rules []api.Rule
+
+	mu              sync.Mutex
+	attached        int
+	owned, released bool
+	off             bool
+}
+
+func (f *fakeBackend) life() (attached int, owned, released, off bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.attached, f.owned, f.released, f.off
 }
 
 func (f *fakeBackend) Status(context.Context) api.Status {
 	return api.Status{Version: "t", Capturing: true}
 }
 func (f *fakeBackend) Bus() *bus.Bus { return f.b }
-func (f *fakeBackend) Audit(string)  {}
+func (f *fakeBackend) Attach(own bool) func() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.attached++
+	if own {
+		f.owned = true
+	}
+	return func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.attached--
+		if own && f.owned {
+			f.released = true
+		}
+	}
+}
+
+func (f *fakeBackend) Disown(context.Context) { f.mu.Lock(); f.owned = false; f.mu.Unlock() }
+
+func (f *fakeBackend) Off(context.Context) error {
+	f.mu.Lock()
+	f.off = true
+	f.mu.Unlock()
+	return nil
+}
+
+func (f *fakeBackend) Audit(string) {}
 func (f *fakeBackend) ListFlows(_ context.Context, fl api.FlowFilter) (api.FlowList, error) {
 	if fl.Host == "boom" {
 		return api.FlowList{}, api.BadRequest("boom")
@@ -160,5 +198,56 @@ func TestFilterFromQuery(t *testing.T) {
 	f := FilterFromQuery(r)
 	if f.Q != "x" || f.Host != "h" || f.Status != "4xx" || f.Since != "15m" || !f.HasError || f.MinBytes != 10 || len(f.Method) != 2 || f.Limit != 7 || f.Cursor != "before:z" {
 		t.Fatalf("%+v", f)
+	}
+}
+
+// /v1/attach holds the connection and releases the backend when the client
+// goes away; /v1/disown and /v1/off are one-shot.
+func TestAttachDisownOff(t *testing.T) {
+	ts, fb := newTestServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/v1/attach?own=1", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 16)
+	if _, err := resp.Body.Read(buf); err != nil { // ": attached"
+		t.Fatal(err)
+	}
+	if n, owned, _, _ := fb.life(); n != 1 || !owned {
+		t.Fatalf("attached=%d owned=%v", n, owned)
+	}
+	cancel()
+	_ = resp.Body.Close()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if n, _, _, _ := fb.life(); n == 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n, _, released, _ := fb.life(); n != 0 || !released {
+		t.Fatalf("release not called: attached=%d released=%v", n, released)
+	}
+
+	fb.mu.Lock()
+	fb.owned = true
+	fb.mu.Unlock()
+	if resp, err := http.Post(ts.URL+"/v1/disown", "application/json", nil); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("disown: %v %v", err, resp)
+	} else {
+		resp.Body.Close()
+	}
+	if _, owned, _, _ := fb.life(); owned {
+		t.Fatal("disown must clear ownership")
+	}
+	if resp, err := http.Post(ts.URL+"/v1/off", "application/json", nil); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("off: %v %v", err, resp)
+	} else {
+		resp.Body.Close()
+	}
+	if _, _, _, off := fb.life(); !off {
+		t.Fatal("off not forwarded")
 	}
 }

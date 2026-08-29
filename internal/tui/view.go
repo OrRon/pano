@@ -91,6 +91,15 @@ func (m *Model) render() string {
 		pw := min(w-8, 100)
 		ph := min(bodyH-2, m.actionsRows())
 		return m.overlay(base, m.renderActions(pw, ph), (w-pw)/2-1, (h-ph)/2-1, pw)
+	case modeQuit:
+		if m.bp() == bpS {
+			parts = append([]string{header}, m.renderQuit(w, bodyH)...)
+			parts = append(parts, footer)
+			return strings.Join(parts, "\n")
+		}
+		pw := min(w-8, 96)
+		ph := min(bodyH-2, m.quitRows())
+		return m.overlay(base, m.renderQuit(pw, ph), (w-pw)/2-1, (h-ph)/2-1, pw)
 	case modeHelp:
 		if m.bp() == bpS {
 			parts = append([]string{header}, m.renderHelp(w, bodyH)...)

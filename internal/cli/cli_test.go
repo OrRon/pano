@@ -151,3 +151,31 @@ func TestOffHasKeepDaemonFlag(t *testing.T) {
 		t.Fatalf("pano off must expose --keep-daemon (err=%v)", err)
 	}
 }
+
+// `pano on` opens the UI by default and -b/--background keeps today's
+// daemon-only behaviour (ADR 0009); `pano ui` has no lifecycle flags.
+func TestOnHasBackgroundFlag(t *testing.T) {
+	root := New(Hooks{})
+	on, _, err := root.Find([]string{"on"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := on.Flags().Lookup("background")
+	if f == nil || f.Shorthand != "b" {
+		t.Fatalf("pano on must expose -b/--background, got %+v", f)
+	}
+	ui, _, err := root.Find([]string{"ui"})
+	if err != nil || ui.Flags().Lookup("background") != nil {
+		t.Fatalf("pano ui: err=%v, must not carry --background", err)
+	}
+}
+
+func TestRenderLifecycle(t *testing.T) {
+	a := &App{}
+	if got := a.renderLifecycle(api.Lifecycle{Mode: "app", UIs: 1}); !strings.Contains(got, "app") || !strings.Contains(got, "1 ui attached") {
+		t.Fatalf("app: %q", got)
+	}
+	if got := a.renderLifecycle(api.Lifecycle{Mode: "background"}); !strings.Contains(got, "pano off") {
+		t.Fatalf("background: %q", got)
+	}
+}

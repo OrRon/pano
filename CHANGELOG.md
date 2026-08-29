@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Turning pano off took up to 8 s while a browser held a streaming or long-poll request open: shutdown waited for the proxy to drain. It now drains for 0.7 s and then closes the remaining connections (the system proxy is already restored by then, so new connections go direct).
+
+### Changed
+- **`pano on` is the app** (ADR 0009): it starts the daemon, routes the Mac's traffic and opens the UI; quitting the UI turns pano off. `q` asks — *quit and turn pano off* (`q`) or *keep pano running in the background* (`b`) — with the default following how the window was opened; ctrl-c, a closed terminal or a kill turn pano off as well, because the daemon watches its owning window's connection (`GET /v1/attach`) and restores the proxy itself when it drops. `pano on -b` / `--background` keeps the old behaviour (daemon until `pano off`), and is automatic without a terminal (scripts, agents, `--json`). `pano ui` attaches a window to a running daemon — leaving it never stops anything — and, with pano off, behaves exactly like `pano on`. New `lifecycle` line in `pano status` and `pano_status` (`app` / `background`, UIs attached); new control routes `GET /v1/attach`, `POST /v1/disown`, `POST /v1/off`.
+
 ### Security
 - Root CA now lives 2 years (was 10), is rotated automatically once expired (leaf cache wiped, `pano ca install` prompted again), and `pano ca status` / `pano status` / `pano doctor` / `pano_status` warn 30 days ahead; leaf certificates never outlive the root.
 - `pano ca install` grants keychain trust for the TLS server policy only (`-p ssl -p basic`), so the root cannot vouch for code signing, S/MIME or software updates; `pano ca uninstall` also sweeps roots left by earlier rotations, and `pano ca reset` untrusts the outgoing root before replacing it (previously it stayed trusted for all policies with no key behind it).

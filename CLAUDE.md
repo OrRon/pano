@@ -77,6 +77,11 @@ changing boundaries.
   from them (see `traceTimes`).
 - `pano stop` restores the system proxy and `pano start` does **not** re-enable
   it; after a rebuild the user must run `pano on` again.
+- `pano on` opens the UI and owns the daemon (ADR 0009): the daemon turns
+  itself off when the owning UI's `/v1/attach` request drops. Never run bare
+  `pano on` from a script or an agent shell expecting it to return — it only
+  falls back to background mode when stdin/stdout are not a TTY or with
+  `--json`; use `pano on -b` explicitly.
 - WebSocket upstream dials need an explicit port (`:443`/`:80`) — the Host
   header usually has none.
 - Bubble Tea v2 (`charm.land/bubbletea/v2`): `View()` returns `tea.View`; use

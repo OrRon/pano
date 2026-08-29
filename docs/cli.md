@@ -1,9 +1,10 @@
 # CLI reference
 
 `pano` is a single binary. Most commands talk to the daemon over
-`~/.pano/pano.sock`; `pano start`, `pano on` and `pano run` start the daemon
-if it is not running (`pano mcp` deliberately does not — see
-[mcp.md](mcp.md)). Output is coloured on a TTY and plain
+`~/.pano/pano.sock`; `pano on`, `pano ui`, `pano start` and `pano run` start
+the daemon if it is not running (`pano mcp` deliberately does not — see
+[mcp.md](mcp.md)). `pano on` is the app: it opens the UI and quitting the UI
+turns pano off; `pano on -b` runs it in the background instead (ADR 0009). Output is coloured on a TTY and plain
 otherwise; `--json` prints the control-API response verbatim.
 
 ```
@@ -14,9 +15,15 @@ pano [command] [flags]
 
 Interactive terminal UI over the same control API: live flow list, detail
 tabs (Summary / Request / Response / Explain / Diff), JSON path selection,
-replay, marking two flows for diff, rules and held-request drawers. Starts the
-daemon if needed. Aliases: `pano tui`, `pano watch`. Keys and layout are
-documented in [tui-design.md](tui-design.md).
+replay, marking two flows for diff, rules, held, decrypt and mobile drawers.
+Aliases: `pano tui`, `pano watch`. Keys and layout are documented in
+[tui-design.md](tui-design.md).
+
+With pano running, `pano ui` **attaches** a window: closing it leaves pano
+running (`q` offers to turn it off as well). With pano off, `pano ui` does
+exactly what `pano on` does — starts the daemon, routes the Mac's traffic
+through it and opens the UI as its owner, so closing the window turns pano
+off again. It needs a terminal; in scripts use `pano on -b` and `pano tail`.
 
 ## Global flags
 
@@ -84,31 +91,44 @@ Daemon, capture, CA and system-proxy state. Exit 3 when not running.
 
 ### `pano on` / `pano off`
 
-`on` routes the Mac's HTTP and HTTPS traffic through pano by setting the
-system proxy of every enabled network service (previous settings are
-snapshotted and restored by `off`, `stop`, or the watchdog if the daemon
-dies). The first time, it offers to run `pano ca install`. In a
-non-interactive shell it refuses unless the CA is already trusted or `--yes`
-is given.
+`on` starts the daemon, routes the Mac's HTTP and HTTPS traffic through it by
+setting the system proxy of every enabled network service (previous settings
+are snapshotted and restored by `off`, `stop`, or the watchdog if the daemon
+dies), and **opens the UI**. Quitting the UI turns pano off again — like
+closing an app: `q` asks *quit and turn pano off* (`q`) or *keep pano
+running in the background* (`b`); ctrl-c, a closed terminal window or a
+kill turn it off too, because the daemon notices its owning window is gone
+and restores the proxy itself (ADR 0009). The first time, `on` offers to run
+`pano ca install`. In a non-interactive shell it refuses unless the CA is
+already trusted or `--yes` is given.
 
 | Flag | Meaning |
 |---|---|
+| `-b, --background` | do not open the UI; pano runs until `pano off` |
 | `-y, --yes` | do not prompt (installs the CA if needed) |
 
-On success pano's mascot wakes up next to the status line (a short glance
-around on a colour terminal; one static frame when piped, with `--json`,
-`--quiet` or `NO_COLOR`):
+Background mode is also what you get without a terminal — a script, a
+Makefile, an agent's shell, piped output or `--json` — so nothing that
+automates pano needs the flag. Then pano's mascot wakes up next to the
+status line (a short glance around on a colour terminal; one static frame
+when piped, with `--json`, `--quiet` or `NO_COLOR`):
 
 ```
   ╭─────╮
-  │ ◉ ◉ │  ✓ system proxy ON → 127.0.0.1:9091  Wi-Fi
+  │ ◉ ◉ │  ✓ system proxy ON → 127.0.0.1:9091   running in the background
   ╰─────╯    watch with pano ui · pano tail   turn off with pano off
 ```
 
+When the UI closes, the terminal that opened it gets one line saying what
+happened: `✓ pano is off — system proxy restored, daemon stopped`, `● pano
+keeps running in the background — pano ui to watch · pano off to stop`, or
+`○ pano was turned off` when another terminal ran `pano off` underneath it.
+
 `off` restores the snapshot and then stops the daemon, so nothing keeps
-running — and the MCP tools report "pano is off" — until the next `on`.
-If the daemon is dead but `~/.pano/sysproxy.json` exists, `off` restores it
-directly.
+running — and the MCP tools report "pano is off" — until the next `on`. It
+is the way to stop a background daemon, and works from any terminal while a
+UI is open (the UI exits with "pano was turned off"). If the daemon is dead
+but `~/.pano/sysproxy.json` exists, `off` restores it directly.
 
 | Flag | Meaning |
 |---|---|

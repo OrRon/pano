@@ -84,7 +84,17 @@ not this machine; also the `mobile` header chip while `pano mobile` is on) ·
 List: `j/k` move · `g/G` top/bottom · `⏎` open · `x` explain · `m` mark · `d` diff ·
 `R` replay · `/` filter · `f` follow · `space` pause list · `c` toggle capture ·
 `r` rules · `h` held · `D` decrypt · `M` mobile · `o` options for the selected flow ·
-`n` never-decrypt the selected tunnel's host · `?` help · `q` quit.
+`n` never-decrypt the selected tunnel's host · `?` help · `q` quit (asks).
+
+Quit (`q` in the list): a two-item overlay, because leaving means something
+— `q` *quit and turn pano off* (restores the Mac's proxy settings, stops the
+daemon) or `b` *keep pano running in the background* (`pano ui` reopens the
+window, `pano off` stops it). The highlighted default follows how the window
+was opened: a `pano on` window owns pano and defaults to off, a `pano ui`
+window attached to a running daemon defaults to background. The last line
+names what is on (system proxy, mobile) and who owns it. `esc` stays;
+ctrl-c leaves without asking and the daemon applies the ownership rule
+(ADR 0009).
 
 Options menu (`o` in the list or detail): every action for that entry with
 its key on screen — `o` decrypt only this host (adds it and switches mode

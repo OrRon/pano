@@ -53,5 +53,16 @@ type Backend interface {
 
 	Config(ctx context.Context) any
 	Shutdown(ctx context.Context) error
+
+	// Attach registers a terminal UI. With own, the daemon turns itself off
+	// (Off) when the returned release func runs — the UI's connection
+	// dropped — unless Disown was called first. Without own, release only
+	// decrements the UI count.
+	Attach(own bool) (release func())
+	// Disown drops UI ownership: the daemon keeps running in the background
+	// when the owning UI closes.
+	Disown(ctx context.Context)
+	// Off restores the system proxy and stops the daemon — `pano off`.
+	Off(ctx context.Context) error
 	Audit(line string)
 }

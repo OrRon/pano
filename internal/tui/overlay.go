@@ -136,7 +136,7 @@ func (m *Model) renderHelp(w, h int) []string {
 	groups := []group{
 		{"navigate", [][2]string{{"j/k ↑/↓", "move"}, {"g/G", "top/bottom"}, {"^d/^u", "half page"}, {"⏎ l", "open flow"}, {"esc h", "back / clear filter"}, {"f", "follow newest"}, {"space", "pause list"}}},
 		{"inspect", [][2]string{{"1-5", "summary/request/response/explain/diff"}, {"⇥", "next tab"}, {"v", "cycle view: summary→schema→pretty→raw"}, {"/", "filter (list) · JSON path (detail)"}, {"x", "explain LLM call"}, {"S", "reveal secrets (audited)"}, {"H", "toggle headers"}}},
-		{"act", [][2]string{{"m", "mark for diff"}, {"d", "diff marked ↔ selected"}, {"R", "replay"}, {"c", "toggle capture"}, {"r", "rules drawer"}, {"h", "held requests"}, {"D", "decrypt drawer"}, {"M", "mobile drawer: open the proxy to phones, QR code, devices"}, {"o", "options for the selected flow: decrypt only/never its host, filter, replay…"}, {"n", "never decrypt this tunnel's host"}}},
+		{"act", [][2]string{{"m", "mark for diff"}, {"d", "diff marked ↔ selected"}, {"R", "replay"}, {"c", "toggle capture"}, {"r", "rules drawer"}, {"h", "held requests"}, {"D", "decrypt drawer"}, {"M", "mobile drawer: open the proxy to phones, QR code, devices"}, {"o", "options for the selected flow: decrypt only/never its host, filter, replay…"}, {"n", "never decrypt this tunnel's host"}, {"q", "quit: turn pano off, or keep it running in the background"}}},
 		{"drawers", [][2]string{{"⏎", "toggle rule · resume held · host → only"}, {"x", "remove rule · drop held · remove host"}, {"n", "host → never"}, {"+", "type a host to add"}, {"1/2/3", "decrypt all / only / off"}, {"⏎ (mobile)", "open / close the proxy to the Wi-Fi"}, {"⇥", "rules → held → decrypt → mobile"}}},
 	}
 	var out []string

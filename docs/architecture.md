@@ -261,6 +261,12 @@ See [rules.md](rules.md) for the schema and recipes.
    `EVFILT_PROC/NOTE_EXIT` for the daemon to die (polling on other OSes) and
    then restores the snapshot. A clean `pano off` / `pano stop` restores and
    deletes the file first, so the watchdog simply exits.
+6. The UI that `pano on` opens holds `GET /v1/attach?own=1` open for its
+   whole life. When that request's context ends — `q`, ctrl-c, a closed
+   window, a kill — the daemon runs the `off` sequence on itself
+   (`internal/daemon/lifecycle.go`), so a dead UI is covered the same way a
+   dead daemon is. `pano ui` attaches without `own`; `POST /v1/disown`
+   turns an owned daemon into a background one (ADR 0009).
 5. On start the daemon calls `RestoreStale`; `pano doctor` reports a stale
    file and `pano off` restores it even when the daemon is down.
 

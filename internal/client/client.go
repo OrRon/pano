@@ -446,6 +446,50 @@ func (c *Client) Config(ctx context.Context) (json.RawMessage, error) {
 	return r, c.do(ctx, "GET", "/v1/config", nil, &r)
 }
 
+// Attach registers this process as a terminal UI and keeps the connection
+// open until ctx ends. The returned channel closes when the daemon closes
+// the stream (it stopped, or was turned off elsewhere). With own, the
+// daemon turns itself off once the connection drops (app mode).
+func (c *Client) Attach(ctx context.Context, own bool) (<-chan struct{}, error) {
+	q := ""
+	if own {
+		q = "?own=1"
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", c.base+"/v1/attach"+q, nil)
+	if err != nil {
+		return nil, err
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.http.Do(req) //nolint:bodyclose // closed by the reader goroutine below
+	if err != nil {
+		return nil, ErrNotRunning
+	}
+	if resp.StatusCode != 200 {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("pano: attach: %s", resp.Status)
+	}
+	gone := make(chan struct{})
+	go func() {
+		defer close(gone)
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
+	}()
+	return gone, nil
+}
+
+// Disown tells the daemon to keep running after the owning UI closes.
+func (c *Client) Disown(ctx context.Context) (api.Lifecycle, error) {
+	var l api.Lifecycle
+	return l, c.do(ctx, "POST", "/v1/disown", nil, &l)
+}
+
+// Off restores the system proxy and stops the daemon (`pano off`).
+func (c *Client) Off(ctx context.Context) error {
+	return c.do(ctx, "POST", "/v1/off", nil, nil)
+}
+
 // Shutdown asks the daemon to stop.
 func (c *Client) Shutdown(ctx context.Context) error {
 	return c.do(ctx, "POST", "/v1/shutdown", nil, nil)

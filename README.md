@@ -35,9 +35,9 @@ token-efficient views, and through a CLI for humans.
 ```sh
 brew install orron/tap/pano        # or: go install github.com/orron/pano/cmd/pano@latest
 pano ca install                    # one-time: trust the local CA (one password prompt)
-pano on                            # route the Mac's HTTP/HTTPS through pano
-pano ui                            # interactive terminal UI (or: pano tail)
-pano off                           # restore previous proxy settings
+pano on                            # route the Mac's HTTP/HTTPS through pano and open the UI
+                                   # … press q to quit: proxy settings restored, pano off
+pano on -b                         # or: run in the background (pano ui · pano tail · pano off)
 ```
 
 Give it to Claude Code:
@@ -60,6 +60,43 @@ Prefer not to touch system settings? Wrap a single process instead:
 pano run -- curl https://api.github.com/zen
 pano run -- npm test
 ```
+
+## On, off, and in the background
+
+`pano on` behaves like an app. It starts the daemon, points the Mac's system
+proxy at it and opens the UI — that window *is* pano. Quit the window and
+pano is off: the proxy settings you had before come back and the daemon
+stops. Nothing keeps capturing after you stop looking.
+
+`q` asks what leaving should mean, with both answers on screen:
+
+```
+ QUIT   esc stays
+ q   quit and turn pano off               restores the Mac's proxy settings and stops pano
+ b   keep pano running in the background  pano ui reopens this window · pano off stops it
+ ● pano is on · system proxy → 127.0.0.1:9091 · this window owns it
+```
+
+Closing the terminal, ctrl-c or a kill count as quitting. That is not
+cleanup code in the UI: the daemon holds the window's connection and turns
+itself off the moment that connection drops — the same way its watchdog
+restores your proxy if the daemon itself dies. There is no way to leave
+the Mac pointing at a proxy nobody is watching.
+
+When you want pano without a window:
+
+```sh
+pano on -b        # background: capture until `pano off`
+pano ui           # open a window on it — closing that one leaves pano running
+pano off          # restore the proxy settings and stop
+```
+
+Scripts, Makefiles, agents' shells, piped output and `--json` get the
+background behaviour automatically, so nothing that automates pano needs the
+flag. `pano status` (and `pano_status` for agents) says which mode you are
+in: `lifecycle ● app — closing its window turns pano off` or `○ background
+— pano off stops it`. Stopping takes about a second even with a browser's
+streaming connections open. The reasoning is in [ADR 0009](docs/adr/0009-app-lifecycle.md).
 
 ## Phones and tablets
 

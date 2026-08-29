@@ -27,6 +27,7 @@ const (
 	modeMobile
 	modeActions
 	modeHelp
+	modeQuit
 )
 
 // pane is what the detail viewport is showing.
@@ -78,6 +79,12 @@ type Model struct {
 	marked    flow.ID // first flow marked for diff
 	vp        viewport.Model
 
+	// Lifecycle (ADR 0009)
+	own    bool       // this UI owns the daemon: closing it turns pano off
+	exit   Exit       // why Run returned
+	quitIx int        // highlighted item of the quit overlay
+	attach *attachSub // held open for the daemon to notice us leaving
+
 	// Drawers
 	rules         []api.Rule
 	held          []api.Held
@@ -114,6 +121,12 @@ func (m *Model) Init() tea.Cmd {
 	if sub, err := openEvents(m.c); err == nil {
 		m.sub = sub
 		cmds = append(cmds, sub.next())
+	} else {
+		m.err = err
+	}
+	if at, err := openAttach(m.c, m.own); err == nil {
+		m.attach = at
+		cmds = append(cmds, at.wait())
 	} else {
 		m.err = err
 	}
@@ -203,6 +216,29 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sub = nil
 		m.err = client.ErrNotRunning
 		return m, nil
+	case attachLostMsg:
+		// The daemon closed our attachment: it is stopping (pano off in
+		// another terminal, or the off we asked for) — leave with it.
+		if m.exit == ExitInterrupt {
+			m.exit = ExitGone
+		}
+		return m, tea.Quit
+	case offDoneMsg:
+		if msg.err != nil {
+			m.mode = m.prevMode
+			m.showToast("✗ could not turn pano off: " + msg.err.Error())
+			return m, nil
+		}
+		m.exit = ExitOff
+		return m, tea.Quit
+	case disownDoneMsg:
+		if msg.err != nil {
+			m.mode = m.prevMode
+			m.showToast("✗ " + msg.err.Error())
+			return m, nil
+		}
+		m.exit = ExitDetach
+		return m, tea.Quit
 	case detailMsg:
 		if msg.id != m.detailID {
 			return m, nil
@@ -288,9 +324,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := k.String()
 	if key == "ctrl+c" {
+		m.exit = ExitInterrupt
 		return m, tea.Quit
 	}
 	switch m.mode {
+	case modeQuit:
+		return m.handleQuitKey(key)
 	case modeFilter:
 		return m.handleFilterKey(k)
 	case modeHelp:
@@ -312,7 +351,7 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *Model) handleListKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "q":
-		return m, tea.Quit
+		return m.openQuit()
 	case "j", "down":
 		m.moveCursor(1)
 	case "k", "up":

@@ -146,6 +146,9 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /v1/mobile", s.hSetMobile)
 	m.HandleFunc("GET /v1/config", s.hConfig)
 	m.HandleFunc("POST /v1/shutdown", s.hShutdown)
+	m.HandleFunc("GET /v1/attach", s.hAttach)
+	m.HandleFunc("POST /v1/disown", s.hDisown)
+	m.HandleFunc("POST /v1/off", s.hOff)
 	m.HandleFunc("/debug/pprof/", pprof.Index)
 	m.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	m.HandleFunc("/debug/pprof/profile", pprof.Profile)
@@ -660,6 +663,53 @@ func (s *Server) hSetMobile(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) hConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.b.Config(r.Context()))
+}
+
+// hAttach holds a UI's connection open for as long as the UI runs (heartbeats
+// only). The daemon learns the UI is gone when the request context ends,
+// which also covers a closed terminal window or a killed process — so app
+// mode (?own=1) is enforced here, not in the UI's exit path.
+func (s *Server) hAttach(w http.ResponseWriter, r *http.Request) {
+	own := r.URL.Query().Get("own") == "1"
+	rc := http.NewResponseController(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, ": attached\n\n")
+	_ = rc.Flush()
+	release := s.b.Attach(own)
+	defer release()
+	if own {
+		s.b.Audit("ui attached (owns the daemon)")
+	}
+	hb := time.NewTicker(15 * time.Second)
+	defer hb.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-hb.C:
+			if _, err := io.WriteString(w, ": heartbeat\n\n"); err != nil {
+				return
+			}
+			_ = rc.Flush()
+		}
+	}
+}
+
+func (s *Server) hDisown(w http.ResponseWriter, r *http.Request) {
+	s.b.Disown(r.Context())
+	s.b.Audit("ui detached — daemon stays in the background")
+	writeJSON(w, s.b.Status(r.Context()).Lifecycle)
+}
+
+func (s *Server) hOff(w http.ResponseWriter, r *http.Request) {
+	s.b.Audit("off requested by a ui")
+	if err := s.b.Off(r.Context()); err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"off": true})
 }
 
 func (s *Server) hShutdown(w http.ResponseWriter, r *http.Request) {

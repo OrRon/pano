@@ -223,8 +223,7 @@ trusted" state, is in [mobile.md](mobile.md).
 ## How do I completely remove pano?
 
 ```sh
-pano off                 # restore the macOS proxy settings (safe if already off)
-pano stop                # stop the daemon
+pano off                 # restore the macOS proxy settings and stop the daemon (safe if already off)
 pano ca uninstall        # remove the root from the login keychain
 rm -rf ~/.pano           # CA keys, captures, rules, config, logs
 brew uninstall pano      # or delete the binary you installed

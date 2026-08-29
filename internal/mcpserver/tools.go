@@ -291,6 +291,14 @@ func FormatStatus(st api.Status) string {
 	if st.SystemProxy.Detail != "" {
 		fmt.Fprintf(&b, " (%s)", st.SystemProxy.Detail)
 	}
+	if st.Lifecycle.Mode == "app" {
+		fmt.Fprintf(&b, "\nlifecycle: app — a `pano on` window owns the daemon; closing it turns pano off")
+	} else {
+		fmt.Fprintf(&b, "\nlifecycle: background — runs until the user runs `pano off`")
+	}
+	if st.Lifecycle.UIs > 0 {
+		fmt.Fprintf(&b, " (%d ui attached)", st.Lifecycle.UIs)
+	}
 	fmt.Fprintf(&b, "\nca trusted: %v", st.CA.Trusted)
 	if !st.CA.Trusted {
 		fmt.Fprintf(&b, " — user must run `pano ca install` in a terminal")

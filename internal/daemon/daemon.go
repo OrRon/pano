@@ -67,6 +67,7 @@ type Daemon struct {
 	client *client.Client
 	site   *mobile.Site
 
+	life       lifecycle
 	mobileMu   sync.Mutex
 	mobileLn   net.Listener // LAN listener while `pano mobile` is on
 	mobileLAN  mobile.LAN
@@ -74,6 +75,7 @@ type Daemon struct {
 
 	session   atomic.Value // string
 	cancel    context.CancelFunc
+	ctx       context.Context // run's context; done once shutdown has begun
 	wg        sync.WaitGroup
 	auditMu   sync.Mutex
 	decryptMu sync.Mutex // serialises ChangeDecrypt read-modify-write
@@ -194,7 +196,7 @@ func build(opts Options) (*Daemon, error) {
 
 func (d *Daemon) run(parent context.Context) error {
 	ctx, cancel := context.WithCancel(parent)
-	d.cancel = cancel
+	d.ctx, d.cancel = ctx, cancel
 	defer cancel()
 
 	// A previous daemon may have died with the system proxy on.
@@ -262,6 +264,10 @@ func (d *Daemon) run(parent context.Context) error {
 	return d.shutdown()
 }
 
+// proxyDrain is how long shutdown lets in-flight requests finish before
+// closing their connections.
+const proxyDrain = 700 * time.Millisecond
+
 func (d *Daemon) shutdown() error {
 	sctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
@@ -271,7 +277,14 @@ func (d *Daemon) shutdown() error {
 		}
 	}
 	_ = d.ctl.Shutdown(sctx)
-	_ = d.proxy.Shutdown(sctx)
+	// Drain briefly, then cut: browsers hold streaming and long-poll
+	// requests open for minutes, and stopping must not wait on them. The
+	// system proxy is already restored, so new connections go direct.
+	dctx, dcancel := context.WithTimeout(sctx, proxyDrain)
+	if err := d.proxy.Shutdown(dctx); err != nil {
+		_ = d.proxy.Close()
+	}
+	dcancel()
 	if d.db != nil {
 		_ = d.db.Flush(sctx)
 		_ = d.db.Close()

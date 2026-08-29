@@ -206,7 +206,8 @@ with the same message text.
 ## Off and on
 
 pano only runs between the user's `pano on`/`pano start` and `pano off`/
-`pano stop`. The MCP process is up for the whole client session regardless,
+`pano stop` — or, since `pano on` opens the UI, between opening and quitting
+that window (ADR 0009). The MCP process is up for the whole client session regardless,
 so the model sees two states of the same server:
 
 ```mermaid
@@ -214,7 +215,7 @@ stateDiagram-v2
     direction LR
     [*] --> Off: client spawns pano mcp
     Off --> On: user runs pano on / pano start
-    On --> Off: user runs pano off / pano stop
+    On --> Off: user runs pano off / pano stop, or quits the pano on window
     note left of Off
         every tool returns isError:
         "pano is off … ask the user to run pano on"

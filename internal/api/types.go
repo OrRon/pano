@@ -58,9 +58,20 @@ type Status struct {
 	Persist      bool      `json:"persist"`
 	Decrypt      Decrypt   `json:"decrypt"`
 	Mobile       Mobile    `json:"mobile"`
+	Lifecycle    Lifecycle `json:"lifecycle"`
 	Redaction    bool      `json:"redaction"`
 	BusSeq       uint64    `json:"bus_seq"`
 	StartedAt    time.Time `json:"started_at"`
+}
+
+// Lifecycle says who decides when the daemon stops (ADR 0009).
+type Lifecycle struct {
+	// Mode is "app" while a `pano on` UI owns the daemon — closing that UI
+	// turns pano off — and "background" otherwise, where only `pano off`
+	// (or `pano stop`) stops it.
+	Mode string `json:"mode"`
+	// UIs is the number of terminal UIs attached right now.
+	UIs int `json:"uis"`
 }
 
 // CAStatus describes the root certificate.

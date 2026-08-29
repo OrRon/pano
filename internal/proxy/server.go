@@ -252,6 +252,22 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return err
 }
 
+// Close force-closes the listeners and every open connection, including
+// hijacked tunnels. Used after a short Shutdown drain: a user turning pano
+// off should not wait for a browser's streaming request to end.
+func (s *Server) Close() error {
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
+	err := s.front.Close()
+	_ = s.mitm.Close()
+	_ = s.h2.Close()
+	if t, ok := s.transport.(*http.Transport); ok {
+		t.CloseIdleConnections()
+	}
+	return err
+}
+
 // SetCapturing toggles recording (the proxy keeps forwarding).
 func (s *Server) SetCapturing(on bool) { s.capturing.Store(on) }
 

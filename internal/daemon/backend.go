@@ -46,7 +46,8 @@ func (d *Daemon) Status(ctx context.Context) api.Status {
 			Trusted: trust.Installed, Supported: trust.Supported, Detail: trust.Detail, Warning: d.ca.ExpiryWarning(),
 		},
 		SystemProxy: d.SysProxy(ctx), Rules: len(rules), RulesEnabled: enabled, Held: len(d.rules.Held()),
-		Persist: d.db != nil, Decrypt: d.Decrypt(ctx), Mobile: d.Mobile(ctx), Redaction: d.cfg.Redaction.Enabled, BusSeq: d.bus.Seq(), StartedAt: d.started,
+		Lifecycle: d.Lifecycle(),
+		Persist:   d.db != nil, Decrypt: d.Decrypt(ctx), Mobile: d.Mobile(ctx), Redaction: d.cfg.Redaction.Enabled, BusSeq: d.bus.Seq(), StartedAt: d.started,
 	}
 	if d.mcpLn != nil {
 		st.MCPAddr = d.mcpLn.Addr().String()

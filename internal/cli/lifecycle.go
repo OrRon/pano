@@ -17,6 +17,7 @@ import (
 	"github.com/orron/pano/internal/api"
 	"github.com/orron/pano/internal/client"
 	"github.com/orron/pano/internal/config"
+	"github.com/orron/pano/internal/tui"
 )
 
 func (a *App) cmdVersion() *cobra.Command {
@@ -145,28 +146,35 @@ func (a *App) cmdStop() *cobra.Command {
 // stopDaemon asks a running daemon to shut down and waits for it to exit.
 func (a *App) stopDaemon(ctx context.Context) error {
 	c := a.client()
-	pid := 0
-	if b, err := os.ReadFile(a.paths.PIDFile()); err == nil {
-		pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
-	}
 	if err := c.Shutdown(ctx); err != nil && !errors.Is(err, client.ErrNotRunning) {
 		return err
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if pid > 0 {
-			if p, err := os.FindProcess(pid); err != nil || p.Signal(syscall.Signal(0)) != nil {
-				break
-			}
-		} else if !c.Ping(ctx) {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	a.waitStopped(ctx, 10*time.Second)
 	if !a.quiet {
 		a.printf("%s pano stopped\n", a.c(green, "✓"))
 	}
 	return nil
+}
+
+// waitStopped blocks until the daemon process (pid file) or its socket is
+// gone, or the timeout passes.
+func (a *App) waitStopped(ctx context.Context, timeout time.Duration) {
+	c := a.client()
+	pid := 0
+	if b, err := os.ReadFile(a.paths.PIDFile()); err == nil {
+		pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if pid > 0 {
+			if p, err := os.FindProcess(pid); err != nil || p.Signal(syscall.Signal(0)) != nil {
+				return
+			}
+		} else if !c.Ping(ctx) {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func (a *App) cmdStatus() *cobra.Command {
@@ -177,7 +185,7 @@ func (a *App) cmdStatus() *cobra.Command {
 			st, err := a.client().Status(cmd.Context())
 			if err != nil {
 				if errors.Is(err, client.ErrNotRunning) && !a.jsonOut {
-					a.printf("%s pano is not running (start with %s)\n", a.c(red, "●"), a.c(bold, "pano start"))
+					a.printf("%s pano is not running (start with %s)\n", a.c(red, "●"), a.c(bold, "pano on"))
 					return &exitError{code: 3}
 				}
 				return err
@@ -228,65 +236,99 @@ func (a *App) renderStatus(st api.Status) {
 	if !st.Redaction {
 		a.printf("  %s secret redaction is OFF\n", a.c(yellow, "!"))
 	}
+	a.printf("  lifecycle    %s\n", a.renderLifecycle(st.Lifecycle))
 	a.printf("%s\n", a.renderDecrypt(st.Decrypt, "  ", time.Now()))
 	a.printf("%s\n", a.renderMobile(st.Mobile, "  ", time.Now()))
 }
 
 func (a *App) cmdOn() *cobra.Command {
-	var yes bool
+	var yes, background bool
 	cmd := &cobra.Command{
 		Use:   "on",
-		Short: "Route macOS system HTTP/HTTPS traffic through pano",
-		Long: `Sets the system-wide HTTP and HTTPS proxy of every enabled network service
-to pano. The previous settings are snapshotted and restored by 'pano off',
-'pano stop', or automatically if the daemon dies.
+		Short: "Turn pano on: route the Mac's traffic through it and open the UI",
+		Long: `Starts the daemon, sets the system-wide HTTP and HTTPS proxy of every
+enabled network service to pano, and opens the terminal UI. Quitting the UI
+(q) turns pano off again — the previous proxy settings are restored and the
+daemon stops — like closing an app. Closing the terminal window, ctrl-c or a
+kill do the same: the daemon notices the UI is gone and turns itself off.
+From the UI, b keeps pano running in the background instead.
+
+'pano on -b' (--background) skips the UI: the daemon keeps running until
+'pano off'. That is also what happens when there is no terminal (a script,
+an agent's shell, --json, piped output).
 
 The first time, pano offers to install its CA into your login keychain so
 browsers accept the certificates it mints (macOS shows one password prompt).`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx := cmd.Context()
-			c := a.client()
-			if !c.Ping(ctx) {
-				if err := a.spawnDaemon(ctx, DaemonOverrides{}); err != nil {
-					return err
-				}
-			}
-			st, err := c.Status(ctx)
-			if err != nil {
-				return err
-			}
-			if st.CA.Supported && !st.CA.Trusted {
-				if !yes && !isTTY(os.Stdin) {
-					return errors.New("CA is not trusted; run `pano ca install` first (or pass --yes)")
-				}
-				if yes || a.confirm("pano's CA is not trusted yet. Install it into your login keychain now? (macOS will ask for your password)") {
-					if err := a.caInstall(ctx, false); err != nil {
-						a.warn("CA install failed: %v — continuing; HTTPS sites will show certificate errors", err)
-					}
-				}
-			}
-			sp, err := c.SetSysProxy(ctx, api.SysProxyRequest{Enabled: true, Confirm: "yes"})
-			if err != nil {
-				return err
-			}
-			if a.jsonOut {
-				return a.printJSON(sp)
-			}
-			a.mascotWake([3]string{
-				"",
-				a.c(green, "✓") + " system proxy ON → " + st.ProxyAddr,
-				"  watch with " + a.c(bold, "pano ui") + " · " + a.c(bold, "pano tail") + "   turn off with " + a.c(bold, "pano off"),
-			})
-			if sp.Detail != "" {
-				// After the animation: may be long (one entry per network
-				// service) and is free to wrap here.
-				a.printf("             %s\n", a.c(dim, sp.Detail))
-			}
-			return nil
+			return a.on(cmd.Context(), yes, background)
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not prompt (installs CA if needed)")
+	cmd.Flags().BoolVarP(&background, "background", "b", false, "do not open the UI; pano runs until `pano off`")
 	return cmd
+}
+
+// on is `pano on`: daemon up, CA trusted, system proxy on, then either the
+// UI as owner (app mode, ADR 0009) or a banner and the prompt back
+// (background mode).
+func (a *App) on(ctx context.Context, yes, background bool) error {
+	c := a.client()
+	if !c.Ping(ctx) {
+		if err := a.spawnDaemon(ctx, DaemonOverrides{}); err != nil {
+			return err
+		}
+	}
+	st, err := c.Status(ctx)
+	if err != nil {
+		return err
+	}
+	if st.CA.Supported && !st.CA.Trusted {
+		if !yes && !isTTY(os.Stdin) {
+			return errors.New("CA is not trusted; run `pano ca install` first (or pass --yes)")
+		}
+		if yes || a.confirm("pano's CA is not trusted yet. Install it into your login keychain now? (macOS will ask for your password)") {
+			if err := a.caInstall(ctx, false); err != nil {
+				a.warn("CA install failed: %v — continuing; HTTPS sites will show certificate errors", err)
+			}
+		}
+	}
+	sp, err := c.SetSysProxy(ctx, api.SysProxyRequest{Enabled: true, Confirm: "yes"})
+	if err != nil {
+		return err
+	}
+	if a.jsonOut {
+		return a.printJSON(sp)
+	}
+	if !background && a.uiPossible() {
+		return a.runUI(ctx, tui.Options{Own: true})
+	}
+	a.mascotWake([3]string{
+		"",
+		a.c(green, "✓") + " system proxy ON → " + st.ProxyAddr + "   running in the background",
+		"  watch with " + a.c(bold, "pano ui") + " · " + a.c(bold, "pano tail") + "   turn off with " + a.c(bold, "pano off"),
+	})
+	if sp.Detail != "" {
+		// After the animation: may be long (one entry per network
+		// service) and is free to wrap here.
+		a.printf("             %s\n", a.c(dim, sp.Detail))
+	}
+	return nil
+}
+
+// renderLifecycle is the one-line status of who stops the daemon.
+func (a *App) renderLifecycle(l api.Lifecycle) string {
+	uis := ""
+	switch l.UIs {
+	case 0:
+	case 1:
+		uis = a.c(dim, "  1 ui attached")
+	default:
+		uis = a.c(dim, fmt.Sprintf("  %d uis attached", l.UIs))
+	}
+	if l.Mode == "app" {
+		return a.c(green, "●") + " app — closing its window turns pano off" + uis
+	}
+	return a.c(dim, "○") + " background — " + a.c(bold, "pano off") + " stops it" + uis
 }
 
 func (a *App) cmdOff() *cobra.Command {

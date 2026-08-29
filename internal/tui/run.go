@@ -13,21 +13,36 @@ import (
 	"github.com/orron/pano/internal/client"
 )
 
-// Run starts the interactive UI and blocks until the user quits.
-func Run(ctx context.Context, c *client.Client, version string) error {
+// Options tunes how the UI is attached to the daemon.
+type Options struct {
+	// Own marks this UI as the daemon's owner (`pano on`): when it closes
+	// for any reason the daemon turns pano off. False for `pano ui` on a
+	// daemon that is already running.
+	Own bool
+}
+
+// Run starts the interactive UI and blocks until the user quits. The Exit
+// says how: chosen off, chosen background, ctrl-c, or the daemon went away.
+func Run(ctx context.Context, c *client.Client, version string, opts Options) (Exit, error) {
 	if !c.Ping(ctx) {
-		return client.ErrNotRunning
+		return ExitGone, client.ErrNotRunning
 	}
 	m := New(c, version)
+	m.own = opts.Own
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithOutput(os.Stderr))
 	_, err := p.Run()
 	if m.sub != nil {
 		m.sub.cancel()
 	}
-	if err != nil && ctx.Err() == nil {
-		return fmt.Errorf("ui: %w", err)
+	if m.attach != nil {
+		// Dropping the attachment is what tells the daemon we left; in
+		// app mode it turns pano off from here on.
+		m.attach.cancel()
 	}
-	return nil
+	if err != nil && ctx.Err() == nil {
+		return m.exit, fmt.Errorf("ui: %w", err)
+	}
+	return m.exit, nil
 }
 
 // layoutViewport sizes the detail viewport for the current terminal.

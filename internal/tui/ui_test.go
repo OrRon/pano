@@ -316,3 +316,57 @@ func TestMobileDrawerKeys(t *testing.T) {
 		t.Fatal("esc should close the drawer")
 	}
 }
+
+// q asks before leaving; the default follows ownership; b detaches, q turns
+// pano off, esc stays.
+func TestQuitOverlayKeys(t *testing.T) {
+	m := sampleModel(120, 40)
+	m.mode, m.own = modeList, true
+	mm, cmd := m.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	m = mm.(*Model)
+	if m.mode != modeQuit || cmd != nil {
+		t.Fatalf("q should open the quit overlay without quitting, mode=%v", m.mode)
+	}
+	if m.quitIx != 0 {
+		t.Fatalf("an owning ui defaults to off, quitIx=%d", m.quitIx)
+	}
+	if v := m.View(); !strings.Contains(v.Content, "turn pano off") || !strings.Contains(v.Content, "background") {
+		t.Fatal("overlay must show both choices")
+	}
+	mm, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if mm.(*Model).mode != modeList {
+		t.Fatal("esc should stay in the ui")
+	}
+
+	m.own = false
+	mm, _ = m.Update(tea.KeyPressMsg{Code: 'q', Text: "q"})
+	m = mm.(*Model)
+	if m.quitIx != 1 {
+		t.Fatalf("an attached ui defaults to background, quitIx=%d", m.quitIx)
+	}
+	if _, cmd = m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"}); cmd == nil {
+		t.Fatal("b must issue the disown command")
+	}
+	if _, cmd = m.Update(tea.KeyPressMsg{Code: 'q', Text: "q"}); cmd == nil {
+		t.Fatal("q must issue the off command")
+	}
+
+	mm, cmd = m.Update(offDoneMsg{})
+	if m = mm.(*Model); m.exit != ExitOff || cmd == nil {
+		t.Fatalf("offDone: exit=%v cmd=%v", m.exit, cmd)
+	}
+	mm, cmd = m.Update(disownDoneMsg{})
+	if m = mm.(*Model); m.exit != ExitDetach || cmd == nil {
+		t.Fatalf("disownDone: exit=%v cmd=%v", m.exit, cmd)
+	}
+	m.exit = ExitInterrupt
+	mm, cmd = m.Update(attachLostMsg{})
+	if m = mm.(*Model); m.exit != ExitGone || cmd == nil {
+		t.Fatalf("attachLost: exit=%v cmd=%v", m.exit, cmd)
+	}
+	m.mode = modeQuit
+	mm, _ = m.Update(offDoneMsg{err: errors.New("nope")})
+	if m = mm.(*Model); m.mode != modeList || !strings.Contains(m.toast, "nope") {
+		t.Fatalf("a failed off must fall back to the ui: mode=%v toast=%q", m.mode, m.toast)
+	}
+}

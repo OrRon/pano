@@ -208,6 +208,7 @@ func TestSnapshots(t *testing.T) {
 			m.status.Mobile.Addr = ""
 		}},
 		{"actions", func(m *Model) { m.mode = modeActions; m.prevMode = modeList; m.cursor = 1 }},
+		{"quit", func(m *Model) { m.own = true; _, _ = m.openQuit() }},
 		{"decrypt-only", func(m *Model) {
 			m.mode = modeList
 			m.status.Decrypt.Mode = "only"
