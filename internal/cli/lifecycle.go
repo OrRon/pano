@@ -18,20 +18,49 @@ import (
 	"github.com/orron/pano/internal/client"
 	"github.com/orron/pano/internal/config"
 	"github.com/orron/pano/internal/tui"
+	"github.com/orron/pano/internal/update"
 )
 
 func (a *App) cmdVersion() *cobra.Command {
-	return &cobra.Command{
+	var check bool
+	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Print version",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		Short: "Print version (--check asks GitHub whether a newer release exists)",
+		Long: `Prints the running version. With --check, asks GitHub's releases endpoint
+for the latest tag right now — ignoring the once-a-day cache and the
+opt-outs, since you asked — and prints the upgrade command for the way this
+pano was installed. Nothing is downloaded or installed.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			out := map[string]any{"version": Version(), "commit": commit, "date": date}
+			var info *update.Info
+			if check {
+				// Do not report the background check's result: the user asked.
+				a.upd = nil
+				var err error
+				info, err = update.Check(cmd.Context(), a.updateOptions(true))
+				if err != nil {
+					return err
+				}
+				out["latest"], out["update_available"], out["hint"], out["url"] = info.Latest, info.Available, info.Hint, info.URL
+			}
 			if a.jsonOut {
-				return a.printJSON(map[string]string{"version": Version(), "commit": commit, "date": date})
+				return a.printJSON(out)
 			}
 			a.printf("pano %s (%s, %s)\n", Version(), commit, date)
+			switch {
+			case info == nil:
+			case update.IsDev(Version()):
+				a.printf("  latest release %s · %s\n", a.c(bold, info.Latest), a.c(dim, "this is a development build"))
+			case info.Available:
+				a.printf("  %s %s is available · %s\n  %s\n", a.c(yellow, "↑"), a.c(bold, info.Latest), a.c(bold, info.Hint), a.c(dim, info.URL))
+			default:
+				a.printf("  %s up to date\n", a.c(green, "✓"))
+			}
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&check, "check", false, "ask GitHub for the latest release")
+	return cmd
 }
 
 func (a *App) cmdStart() *cobra.Command {

@@ -24,6 +24,7 @@ type Config struct {
 	MCP         MCP         `toml:"mcp"`
 	SystemProxy SystemProxy `toml:"system_proxy"`
 	Limits      Limits      `toml:"limits"`
+	Updates     Updates     `toml:"updates"`
 }
 
 // Proxy configures the listening proxy.
@@ -96,6 +97,13 @@ type Limits struct {
 	MaxConns int `toml:"max_conns"`
 }
 
+// Updates controls the once-a-day release check. It only ever prints a hint
+// (never downloads or installs); see internal/update for every other way to
+// turn it off.
+type Updates struct {
+	Check bool `toml:"check"`
+}
+
 // Duration is a time.Duration that marshals as a human string ("7d", "90s").
 type Duration struct{ time.Duration }
 
@@ -145,6 +153,7 @@ func Default() Config {
 		MCP:         MCP{ExposeHTTP: true},
 		SystemProxy: SystemProxy{RestoreOnExit: true},
 		Limits:      Limits{MaxConns: 10000},
+		Updates:     Updates{Check: true},
 	}
 }
 
@@ -208,6 +217,9 @@ func (p Paths) RulesFile() string { return filepath.Join(p.Dir, "rules.json") }
 
 // SysProxyState is the system proxy snapshot.
 func (p Paths) SysProxyState() string { return filepath.Join(p.Dir, "sysproxy.json") }
+
+// UpdateState caches the last release check (internal/update).
+func (p Paths) UpdateState() string { return filepath.Join(p.Dir, "update-check.json") }
 
 // Token is the bearer token for the TCP control listener.
 func (p Paths) Token() string { return filepath.Join(p.Dir, "token") }

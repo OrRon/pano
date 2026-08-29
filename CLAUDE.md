@@ -59,6 +59,12 @@ changing boundaries.
   only**, on the Mac's LAN IP (never `0.0.0.0`), wrapped in
   `mobile.PrivateOnly`, terminal-only (no MCP tool), audited. Control API
   and MCP HTTP never leave loopback.
+- **pano never updates itself and the release check is notify-only** (ADR
+  0010): one direct GET a day to GitHub's releases endpoint with nothing but
+  the version in it, only on an interactive terminal, never in `pano mcp`
+  (stdout is the protocol), and off with `PANO_NO_UPDATE_CHECK`,
+  `DO_NOT_TRACK`, `[updates] check = false` or `update.Default=off`. Do not
+  add a self-update path or any other request pano makes for itself.
 - **Requests addressed to pano itself are served locally, never forwarded**
   (self addresses and `pano.internal`, any scheme) and never become flows;
   `pano.internal` is TLS-terminated whatever the decrypt mode.

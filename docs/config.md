@@ -54,6 +54,9 @@ restore_on_exit = true
 
 [limits]
 max_conns = 10000
+
+[updates]
+check = true
 ```
 
 ## Keys
@@ -151,6 +154,12 @@ Zero disables a limit.
 |---|---|---|---|
 | `max_conns` | int | `10000` | concurrent CONNECT tunnels; beyond it clients get `503 pano: too many connections` |
 
+### `[updates]`
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `check` | bool | `true` | once a day, from an interactive terminal, ask GitHub whether a newer release exists and print a one-line hint. Notify-only: pano never downloads or installs itself. `PANO_NO_UPDATE_CHECK=1` and `DO_NOT_TRACK=1` override this to off; `pano version --check` asks regardless. See ADR 0010. |
+
 ## Environment variables
 
 | Variable | Read by | Effect |
@@ -180,7 +189,8 @@ back into pano).
 ├── certs/<host>.pem     disk cache of minted leafs (30-day TTL)
 ├── pano.db, -wal, -shm  SQLite store (flows, blobs, blob_text, ws_messages, sessions, flows_fts)
 ├── rules.json           persisted rules (0600, rewritten atomically on every change)
-└── sysproxy.json        macOS proxy snapshot; exists only while pano owns the system proxy
+├── sysproxy.json        macOS proxy snapshot; exists only while pano owns the system proxy
+└── update-check.json    when the release check last ran and what it found (0600)
 ```
 
 To relocate: `export PANO_HOME=/path` for every command (including the one

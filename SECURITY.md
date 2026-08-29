@@ -45,7 +45,13 @@ That is the feature. It is also the risk. Please understand it before installing
   requires an explicit flag and is written to `~/.pano/audit.log`.
 - Installing the CA is deliberately **not** available over MCP — only from a terminal.
 - Toggling the system proxy over MCP requires an explicit confirmation argument.
-- pano makes no network requests of its own and has no telemetry.
+- pano has no telemetry. The one request it makes for itself is the once-a-day
+  release check: a GET to GitHub's public releases endpoint with pano's version
+  in the `User-Agent` and nothing else, sent directly (never through the system
+  proxy, never recorded as a flow), only from an interactive terminal, and only
+  ever printing a hint — it never downloads or installs. Off with
+  `PANO_NO_UPDATE_CHECK=1`, `DO_NOT_TRACK=1`, `[updates] check = false` or at
+  build time (`docs/adr/0010-updates-notify-only.md`).
 
 Remove trust at any time with `pano ca uninstall`.
 

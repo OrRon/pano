@@ -12,6 +12,7 @@ import (
 	"github.com/orron/pano/internal/client"
 	"github.com/orron/pano/internal/flow"
 	"github.com/orron/pano/internal/store"
+	"github.com/orron/pano/internal/update"
 )
 
 // mode is the UI's focus/interaction state.
@@ -43,6 +44,9 @@ const (
 type Model struct {
 	c       *client.Client
 	version string
+
+	updateFn func() *update.Info // release check, polled from the tick
+	update   *update.Info        // newer release, once known
 
 	width, height int
 	dark          bool
@@ -148,6 +152,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.now = time.Time(msg)
 		m.frame++
 		cmds := []tea.Cmd{tick()}
+		if m.update == nil && m.updateFn != nil && m.frame%4 == 0 {
+			if info := m.updateFn(); info != nil {
+				m.updateFn = nil
+				if info.Available {
+					m.update = info
+				}
+			}
+		}
 		if m.frame%20 == 0 {
 			cmds = append(cmds, fetchStatus(m.c))
 		}

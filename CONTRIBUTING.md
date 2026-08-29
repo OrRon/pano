@@ -36,6 +36,12 @@ Everything is under `internal/`; there is no public Go API yet.
 5. Document exported identifiers. Every package has a `doc.go`.
 6. Never log or store the CA private key. Never widen the default bind address.
 
+## Releases
+
+Tagging `main` with `vX.Y.Z` builds and publishes everything (GitHub Release,
+checksums, SBOM, Homebrew cask). The steps and the one-time tap setup are in
+[docs/releasing.md](docs/releasing.md).
+
 ## Design decisions
 
 Load-bearing decisions are recorded in `docs/adr/`. If you want to change one, open an

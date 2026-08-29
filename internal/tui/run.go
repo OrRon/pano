@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/orron/pano/internal/client"
+	"github.com/orron/pano/internal/update"
 )
 
 // Options tunes how the UI is attached to the daemon.
@@ -19,6 +20,9 @@ type Options struct {
 	// for any reason the daemon turns pano off. False for `pano ui` on a
 	// daemon that is already running.
 	Own bool
+	// Update, when set, is polled once a second until it returns the result
+	// of the release check (nil while in flight or when nothing is newer).
+	Update func() *update.Info
 }
 
 // Run starts the interactive UI and blocks until the user quits. The Exit
@@ -29,6 +33,7 @@ func Run(ctx context.Context, c *client.Client, version string, opts Options) (E
 	}
 	m := New(c, version)
 	m.own = opts.Own
+	m.updateFn = opts.Update
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithOutput(os.Stderr))
 	_, err := p.Run()
 	if m.sub != nil {

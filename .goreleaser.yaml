@@ -22,6 +22,7 @@ builds:
 archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, NOTICE, README.md, CHANGELOG.md]
 
 checksum:
   name_template: checksums.txt
@@ -40,11 +41,43 @@ changelog:
     - title: Other
       order: 999
 
+release:
+  # 0.x is the beta line; the notes come from the commit groups above.
+  prerelease: auto
+  footer: |
+    **Install / upgrade:** `brew install orron/tap/pano` · `brew upgrade pano` · `go install github.com/orron/pano/cmd/pano@latest`
+    Verify a download: `shasum -a 256 -c checksums.txt --ignore-missing`
+
+# Homebrew cask (not formula): pano ships as a pre-built binary, which is
+# what casks are for. Homebrew is the updater — pano itself only prints a
+# hint when a newer release exists (ADR 0010) — so no `auto_updates`.
 homebrew_casks:
   - name: pano
     repository:
       owner: orron
       name: homebrew-tap
+      # The Actions GITHUB_TOKEN cannot push to another repository; this is a
+      # fine-grained PAT with contents:write on orron/homebrew-tap only.
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/orron/pano
     description: All-seeing HTTPS proxy for AI agents
     license: Apache-2.0
+    hooks:
+      post:
+        # Not yet signed/notarized: clear the quarantine bit Homebrew sets on
+        # cask downloads, or Gatekeeper reports the binary as damaged.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/pano"]
+          end
+      pre:
+        # Runs before the binary is removed — on uninstall and on every
+        # upgrade: restore the Mac's proxy settings and stop the daemon so a
+        # stale daemon never outlives its binary. Harmless when pano is off.
+        uninstall: |
+          system_command "#{HOMEBREW_PREFIX}/bin/pano", args: ["off", "--quiet"], must_succeed: false
+    zap:
+      # `brew uninstall --zap pano` removes the CA, config and captures too.
+      # Run `pano ca uninstall` first: the keychain trust is not a file.
+      trash:
+        - "~/.pano"

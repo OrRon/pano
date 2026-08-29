@@ -182,6 +182,13 @@ func (m *Model) renderHeader(w int) string {
 		if st.Dropped > 0 {
 			parts = append(parts, chip(glyphUp, t.fg(t.Warn), fmt.Sprintf("%d dropped", st.Dropped), t.fg(t.Warn)))
 		}
+		if m.update != nil && w >= 100 {
+			lbl := m.update.Latest + " available"
+			if w >= 160 {
+				lbl += " · " + m.update.Hint
+			}
+			parts = append(parts, chip(glyphUp, t.accent(), lbl, t.accent()))
+		}
 	}
 	gapStr := "   "
 	if w < 160 {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/orron/pano/internal/client"
 	"github.com/orron/pano/internal/config"
+	"github.com/orron/pano/internal/update"
 )
 
 // Build info, set via -ldflags.
@@ -54,6 +55,8 @@ type App struct {
 	errOut  io.Writer
 
 	child *os.Process // daemon spawned by this process, if any (see waitStopped)
+
+	upd *update.Checker // background release check, nil when it must not run
 
 	frameWidth int // mascot row clamp override (tests); 0 = detect from stdout
 	color      bool
@@ -100,8 +103,10 @@ Quick start:
 				app.sock = p.Socket()
 			}
 			app.color = !app.noColor && os.Getenv("NO_COLOR") == "" && isTTY(os.Stdout) && !app.jsonOut
+			app.startUpdateCheck(cmd)
 			return nil
 		},
+		PersistentPostRun: func(*cobra.Command, []string) { app.printUpdateNotice() },
 	}
 	pf := root.PersistentFlags()
 	pf.BoolVar(&app.jsonOut, "json", false, "output JSON")

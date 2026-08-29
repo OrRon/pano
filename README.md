@@ -40,6 +40,9 @@ pano on                            # route the Mac's HTTP/HTTPS through pano and
 pano on -b                         # or: run in the background (pano ui · pano tail · pano off)
 ```
 
+Updating is `brew upgrade pano`; pano tells you once a day when there is
+something to upgrade to — see [Installing and updating](#installing-and-updating).
+
 Give it to Claude Code (details in [Using pano from an AI agent](#using-pano-from-an-ai-agent)):
 
 ```sh
@@ -231,6 +234,27 @@ The full tool catalog, inputs, defaults, token budgets and a worked example are
 in [docs/mcp.md](docs/mcp.md); what the handshake and tool metadata look like
 on the wire is in [docs/mcp-protocol.md](docs/mcp-protocol.md).
 
+## Installing and updating
+
+| | |
+|---|---|
+| **Homebrew** (macOS) | `brew install orron/tap/pano` · later `brew upgrade pano` |
+| **Go** | `go install github.com/orron/pano/cmd/pano@latest` — same command upgrades |
+| **Tarball** (macOS, Linux) | download from [Releases](https://github.com/OrRon/pano/releases), verify with `shasum -a 256 -c checksums.txt --ignore-missing`, put `pano` on your `PATH` |
+
+pano never updates itself. Once a day, when you run it in a terminal, it asks
+GitHub whether a newer release exists and prints one line after the command's
+output — `↑ pano 0.3.0 is available (you have 0.2.0) · brew upgrade pano` —
+with the command that matches how you installed it. `pano version --check`
+asks right now. Turn the check off with `PANO_NO_UPDATE_CHECK=1`,
+`DO_NOT_TRACK=1` or `[updates] check = false` in `~/.pano/config.toml`; it is
+already off in scripts (`--json`, no terminal, `CI`) and inside `pano mcp`.
+Exactly what that request contains is in [Safety](#the-update-check) below.
+
+Uninstalling: `pano ca uninstall` first (keychain trust is not a file, so no
+package manager removes it), then `brew uninstall pano` — `--zap` also
+deletes `~/.pano` — or delete the binary and `rm -rf ~/.pano`.
+
 ## On, off, and in the background
 
 `pano on` behaves like an app. It starts the daemon, points the Mac's system
@@ -342,6 +366,21 @@ default, and when it needs one — say, to reproduce a request with curl — it
 has to ask for it, and you can see that it did.
 
 [SECURITY.md](SECURITY.md) has the full list.
+
+### The update check
+
+This is the only request pano ever makes for itself: once every 24 hours, one
+GET to `https://api.github.com/repos/OrRon/pano/releases/latest`, carrying
+pano's version in the `User-Agent` and nothing else — no identifier, no OS,
+no architecture, no cookies. It goes direct, not through the system proxy,
+so it is never recorded as a flow and never loops through pano. A failure is
+silent; a success is cached in `~/.pano/update-check.json`. It only runs
+when a person will see the answer (a terminal, no `--json`, not in CI, never
+inside `pano mcp`, `pano daemon` or the watchdog) and it only prints — it
+never downloads or installs anything. `PANO_NO_UPDATE_CHECK=1`,
+`DO_NOT_TRACK=1`, `[updates] check = false`, or building with
+`-X github.com/orron/pano/internal/update.Default=off` turn it off ([ADR
+0010](docs/adr/0010-updates-notify-only.md)).
 
 ## Performance
 

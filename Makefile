@@ -6,7 +6,7 @@ DATE     ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -s -w -X $(MODULE)/internal/cli.version=$(VERSION) -X $(MODULE)/internal/cli.commit=$(COMMIT) -X $(MODULE)/internal/cli.date=$(DATE)
 export CGO_ENABLED=0
 
-.PHONY: build install test race lint fuzz bench bench-proxy cover tidy clean release-snapshot
+.PHONY: build install test race lint fuzz bench bench-proxy cover tidy clean need-goreleaser release-check release-snapshot
 
 build:
 	go build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN) ./cmd/pano
@@ -47,5 +47,14 @@ tidy:
 clean:
 	rm -rf bin dist coverage.out
 
-release-snapshot:
-	goreleaser release --snapshot --clean
+# goreleaser is a prebuilt binary on purpose: building it from source pulls in
+# every cloud SDK it can publish to (gigabytes of build cache).
+GORELEASER ?= goreleaser
+need-goreleaser:
+	@command -v $(GORELEASER) >/dev/null || { echo "goreleaser not found: brew install goreleaser (or GORELEASER=/path/to/goreleaser)"; exit 1; }
+
+release-check: need-goreleaser
+	$(GORELEASER) check
+
+release-snapshot: need-goreleaser
+	$(GORELEASER) release --snapshot --clean --skip=sbom

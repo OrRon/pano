@@ -35,6 +35,14 @@ off again. It needs a terminal; in scripts use `pano on -b` and `pano tail`.
 | `-q, --quiet` | less output |
 | `-v, --verbose` | more output |
 
+Once a day, after a command's own output, pano may add one line saying a
+newer release exists and how to get it (`brew upgrade pano`, `go install …`,
+or the release page, depending on how this binary was installed). It appears
+only on an interactive terminal, never with `--json`, `--quiet`, in CI or from
+`pano mcp` / `pano daemon` / `pano env` / completion. Off with
+`PANO_NO_UPDATE_CHECK=1`, `DO_NOT_TRACK=1` or `[updates] check = false`
+([config.md](config.md), ADR 0010).
+
 ## Exit codes
 
 | Code | Meaning |
@@ -143,6 +151,12 @@ Exit 2 when anything fails.
 ### `pano version`
 
 `pano 0.1.0 (abc1234, 2026-08-28T00:00:00Z)`; `--json` for a map.
+
+`pano version --check` asks GitHub for the latest release right now (ignoring
+the daily cache and the opt-outs — you asked) and prints `✓ up to date` or
+`↑ 0.3.0 is available · brew upgrade pano` plus the release URL; with `--json`
+the map gains `latest`, `update_available`, `hint` and `url`. It never
+downloads anything.
 
 ## Certificate authority
 
