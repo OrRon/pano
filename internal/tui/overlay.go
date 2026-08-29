@@ -26,7 +26,7 @@ func (m *Model) renderDrawer(w, h int) []string {
 		return " " + strings.Join(parts, "   ")
 	}
 	if m.mode == modeHeld {
-		out = append(out, t.raised().Render(line(tabs("Held")+"   "+t.faint().Render(fmt.Sprintf("%d waiting", len(m.held))), w)))
+		out = append(out, t.raised(line(tabs("Held")+"   "+t.faint().Render(fmt.Sprintf("%d waiting", len(m.held))), w)))
 		out = append(out, t.fg(t.LineFaint).Render(strings.Repeat(glyphRule, w)))
 		if len(m.held) == 0 {
 			out = append(out, " "+t.faint().Render("nothing held — add a breakpoint rule (preset hold) to pause requests"))
@@ -34,13 +34,13 @@ func (m *Model) renderDrawer(w, h int) []string {
 		for i, hd := range m.held {
 			row := " " + t.heldChip().Render(" "+glyphHeld+" ") + " " + t.secondary().Render(hd.Short) + " " + t.fg(t.Warn).Render(hd.Method) + " " + t.primary().Render(fit(hd.URL, max(10, w-44))) + "  " + t.muted().Render(hd.Phase+" · "+hd.Age)
 			if i == m.drawerIx {
-				row = t.selected().Render(line(row, w))
+				row = t.selected(line(row, w))
 			}
 			out = append(out, row)
 		}
 		return pad(out, w, h)
 	}
-	out = append(out, t.raised().Render(line(tabs("Rules")+"   "+t.faint().Render(fmt.Sprintf("%d rules", len(m.rules))), w)))
+	out = append(out, t.raised(line(tabs("Rules")+"   "+t.faint().Render(fmt.Sprintf("%d rules", len(m.rules))), w)))
 	out = append(out, t.fg(t.LineFaint).Render(strings.Repeat(glyphRule, w)))
 	if len(m.rules) == 0 {
 		out = append(out, " "+t.faint().Render("no rules — try: pano rules add --preset slow_network --param host=api.example.com"))
@@ -106,7 +106,7 @@ func (m *Model) renderRule(r api.Rule, w int, selected bool) string {
 	}
 	row := " " + dot + " " + t.muted().Render(r.ID) + "  " + nameStyle.Bold(true).Render(fit(name, 22)) + "  " + strings.Join(acts, " ") + "  " + t.muted().Render(fit(strings.Join(match, " "), 34)) + "  " + t.faint().Render(meta)
 	if selected {
-		return t.selected().Render(line(row, w))
+		return t.selected(line(row, w))
 	}
 	return line(row, w)
 }
@@ -125,7 +125,7 @@ func (m *Model) renderHelp(w, h int) []string {
 		{"drawers", [][2]string{{"⏎", "toggle rule · resume held"}, {"x", "remove rule · drop held"}, {"⇥", "switch rules/held"}}},
 	}
 	var out []string
-	out = append(out, t.raised().Render(line(" "+t.secondary().Bold(true).Render("KEYS")+"   "+t.faint().Render("esc closes"), w)))
+	out = append(out, t.raised(line(" "+t.secondary().Bold(true).Render("KEYS")+"   "+t.faint().Render("esc closes"), w)))
 	out = append(out, "")
 	col := max(30, (w-4)/2)
 	var left, right []string

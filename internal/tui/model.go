@@ -370,7 +370,7 @@ func (m *Model) handleDetailKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := k.String()
 	switch key {
 	case "esc", "q", "h", "left":
-		m.mode = modeList
+		m.closeDetail()
 		return m, nil
 	case "j", "down":
 		m.vp.ScrollDown(1)
@@ -617,6 +617,19 @@ func (m *Model) openDetail(p pane) (tea.Model, tea.Cmd) {
 		m.detailQ.Part, m.detailQ.View = "both", api.ViewSummary
 	}
 	return m, fetchDetail(m.c, r.ID, m.detailQ)
+}
+
+// closeDetail leaves the detail view and drops the pane entirely, so the
+// list gets the full width back; the next Enter/x starts from a clean fetch.
+func (m *Model) closeDetail() {
+	m.mode = modeList
+	m.detailID = 0
+	m.detail, m.explain, m.diff = api.FlowDetail{}, api.ExplainResult{}, api.DiffResult{}
+	m.detailErr = nil
+	m.loading = false
+	m.pane, m.tab = paneBody, tabSummary
+	m.detailQ.Path = ""
+	m.vp.SetContent("")
 }
 
 // nextView cycles summary → schema → pretty → raw.

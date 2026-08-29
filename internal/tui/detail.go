@@ -67,7 +67,7 @@ func (m *Model) renderDetailHead(w int, focused bool) []string {
 		}
 		head = left + t.primary().Render(fit(url, max(0, room))) + strings.Repeat(" ", max(1, room-ansi.StringWidth(fit(url, max(0, room)))+1)) + right
 	}
-	head = t.raised().Render(line(head, w))
+	head = t.raised(line(head, w))
 
 	// Tab strip.
 	var tabs []string
@@ -132,7 +132,7 @@ func (m *Model) renderPathBar(w int) string {
 	if gap < 1 {
 		right, gap = "", 0
 	}
-	return t.raised().Render(line(left+strings.Repeat(" ", gap)+right, w))
+	return t.raised(line(left+strings.Repeat(" ", gap)+right, w))
 }
 
 // renderDetail renders the whole detail region at the given size.
@@ -167,7 +167,7 @@ func (m *Model) renderContext(w, h int) []string {
 	t := m.theme()
 	var out []string
 	title := func(s string) string {
-		return t.raised().Render(line(" "+t.secondary().Bold(true).Render(strings.ToUpper(s)), w))
+		return t.raised(line(" "+t.secondary().Bold(true).Render(strings.ToUpper(s)), w))
 	}
 	r, ok := m.table.get(m.detailID)
 	if !ok {

@@ -21,11 +21,17 @@ rules it follows so changes stay coherent. The implementation lives in
    digits.
 5. **Motion means data changed.** Only live things animate: in-flight
    spinner, streaming byte counter, the "n new" pill, a one-frame flash on
-   arrival. One 250 ms tick drives everything.
+   arrival, the mascot's eyes (see below). One 250 ms tick drives everything.
 6. **Chrome ≤ 3 rows.** Header, footer hints, and a filter/path bar only when
    active. Column headers disappear below 25 rows.
 7. **Usable at 16 colours.** Bubble Tea downsamples; selection falls back to
    reverse video.
+
+Selection and bars are painted **edge to edge**: `Theme.paint` re-asserts
+the background after every SGR reset a nested style emits, so a highlighted
+row never stops at its first coloured cell. Leaving the detail view (`esc`,
+`←`, `q`) closes the pane entirely — the list gets its width back; the pane
+is a view you enter and leave, not a preview that lingers.
 
 Anti-patterns deliberately avoided: rounded borders on every pane, rainbow
 key hints, emoji in the list, centred text in panes, Nerd-Font-only glyphs,
@@ -48,6 +54,7 @@ decorative animation.
 | mock | `#F27DB4` | `#C23D86` | `◇` mocked responses |
 | syn.str / syn.num / syn.bool | `#9ECE9A` / `#E6A96B` / `#8FB8E8` | `#2F7A45` / `#9C5A10` / `#3B6FB0` | body syntax only: strings, numbers, `true/false/null` — in summary, schema and pretty JSON views |
 | held | `#15151A` on `#38C8E8` | | `‖ HELD` chip — the only inverted chip |
+| brand | `#C44CE6` → `#6C8DF2` | `#A82ED0` → `#3F63D8` | logo gradient — mascot only, never semantic |
 
 Light values are picked automatically from the terminal background
 (`tea.RequestBackgroundColor`); dark is the fallback.
@@ -87,6 +94,27 @@ full-text search.
 
 The footer hints change with the tab: on Explain they lead with `1/2/3
 summary/request/response`, on Request/Response with `v view · H headers`.
+
+## Mascot
+
+The logo's rounded rectangle given a pair of eyes — Panoptes, the watcher
+(`internal/tui/mascot.go`). It is a status indicator first and a character
+second: the eyes are read, not admired.
+
+| Eyes | Meaning |
+|---|---|
+| `• •` | capturing, quiet — glances left/right and blinks once per 10 s cycle |
+| `◉ ◉` (accent) | a flow arrived in the last 600 ms |
+| `─ ─` (muted) | capture paused, by the daemon or by `space` |
+| `✕ ✕` (err) | daemon unreachable |
+
+Two forms: the one-row `▐ • • ▌` at the far left of the header, and the
+three-row rounded box in the empty state. Both take the logo gradient
+(`brand.a` violet → `brand.b` blue, left→right in the header, top→bottom in
+the box) — the only non-semantic colour in the UI, reserved for the mascot.
+Everything derives from model state and the shared tick, so snapshots are
+stable (frame 0 is centred, open eyes). `pano on` / `pano off` print the same
+character in the terminal; `on` plays a short wake-up on a colour TTY.
 
 ## Body colouring
 

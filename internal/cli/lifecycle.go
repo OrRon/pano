@@ -267,11 +267,16 @@ browsers accept the certificates it mints (macOS shows one password prompt).`,
 			if a.jsonOut {
 				return a.printJSON(sp)
 			}
-			a.printf("%s system proxy ON → %s\n", a.c(green, "✓"), st.ProxyAddr)
+			a.mascotWake([3]string{
+				"",
+				a.c(green, "✓") + " system proxy ON → " + st.ProxyAddr,
+				"  watch with " + a.c(bold, "pano ui") + " · " + a.c(bold, "pano tail") + "   turn off with " + a.c(bold, "pano off"),
+			})
 			if sp.Detail != "" {
-				a.printf("  %s\n", a.c(dim, sp.Detail))
+				// After the animation: may be long (one entry per network
+				// service) and is free to wrap here.
+				a.printf("             %s\n", a.c(dim, sp.Detail))
 			}
-			a.printf("  watch traffic with %s · turn off with %s\n", a.c(bold, "pano tail"), a.c(bold, "pano off"))
 			return nil
 		},
 	}
@@ -304,7 +309,11 @@ you still want 'pano run --' or the MCP server to work.`,
 					return err
 				}
 			} else {
-				a.printf("%s system proxy off (previous settings restored)\n", a.c(green, "✓"))
+				hint := "  daemon kept running"
+				if !keep {
+					hint = "  stopping the daemon · " + a.c(bold, "pano on") + " wakes it again"
+				}
+				a.mascotPrint(eyesShut, [3]string{"", a.c(green, "✓") + " system proxy off (previous settings restored)", hint})
 			}
 			if keep {
 				return nil

@@ -52,7 +52,9 @@ type App struct {
 	verbose bool
 	out     io.Writer
 	errOut  io.Writer
-	color   bool
+
+	frameWidth int // mascot row clamp override (tests); 0 = detect from stdout
+	color      bool
 }
 
 // Version returns the version string.

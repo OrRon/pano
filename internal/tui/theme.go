@@ -3,8 +3,10 @@ package tui
 import (
 	"image/color"
 	"math"
+	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Theme is the single style registry for the UI ("Panoptes" palette). Every
@@ -18,8 +20,10 @@ type Theme struct {
 	OK, Redirect, Warn, Err, LLM, Mock         color.Color
 	SynStr, SynNum, SynBool                    color.Color // body syntax: strings / numbers / bool+null
 	HeldFg, HeldBg                             color.Color
+	BrandA, BrandB                             color.Color // logo gradient (top → bottom); mascot only
 
-	grad []color.Color // duration/bytes gradient
+	grad  []color.Color // duration/bytes gradient
+	brand []color.Color // 3-step BrandA → BrandB
 }
 
 func newTheme(dark bool) *Theme {
@@ -48,8 +52,11 @@ func newTheme(dark bool) *Theme {
 		SynBool:     c("#8FB8E8", "#3B6FB0"),
 		HeldFg:      c("#15151A", "#FFFFFF"),
 		HeldBg:      c("#38C8E8", "#0B8DB0"),
+		BrandA:      c("#C44CE6", "#A82ED0"),
+		BrandB:      c("#6C8DF2", "#3F63D8"),
 	}
 	t.grad = lipgloss.Blend1D(24, t.FgMuted, t.FgPrimary, t.Warn, t.Err)
+	t.brand = lipgloss.Blend1D(3, t.BrandA, t.BrandB)
 	return t
 }
 
@@ -60,9 +67,24 @@ func (t *Theme) secondary() lipgloss.Style       { return t.fg(t.FgSecondary) }
 func (t *Theme) muted() lipgloss.Style           { return t.fg(t.FgMuted) }
 func (t *Theme) faint() lipgloss.Style           { return t.fg(t.FgFaint) }
 func (t *Theme) accent() lipgloss.Style          { return t.fg(t.Accent) }
-func (t *Theme) raised() lipgloss.Style          { return lipgloss.NewStyle().Background(t.BgRaised) }
 
-func (t *Theme) selected() lipgloss.Style { return lipgloss.NewStyle().Background(t.BgSelected) }
+// paint fills a whole rendered line with bg. Nested lipgloss styles end
+// every segment with an SGR reset, which would otherwise switch the
+// background off after the first styled cell — the bar/row would only be
+// highlighted up to its first coloured word. The background is re-asserted
+// after each reset so the fill runs edge to edge.
+func (t *Theme) paint(bg color.Color, s string) string {
+	seq := ansi.Style{}.BackgroundColor(bg).String()
+	s = strings.ReplaceAll(s, ansi.ResetStyle, ansi.ResetStyle+seq)
+	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+seq)
+	return seq + s + ansi.ResetStyle
+}
+
+// raised paints a header/footer/title bar.
+func (t *Theme) raised(s string) string { return t.paint(t.BgRaised, s) }
+
+// selected paints the cursor row of the focused pane.
+func (t *Theme) selected(s string) string { return t.paint(t.BgSelected, s) }
 
 func (t *Theme) heldChip() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(t.HeldFg).Background(t.HeldBg).Bold(true)

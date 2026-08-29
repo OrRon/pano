@@ -116,7 +116,7 @@ func (m *Model) renderHeader(w int) string {
 		return gc.Render(g) + " " + lc.Render(label)
 	}
 	var parts []string
-	parts = append(parts, t.primary().Bold(true).Render("pano"))
+	parts = append(parts, m.renderMascotInline()+" "+t.primary().Bold(true).Render("pano"))
 	switch {
 	case m.err != nil:
 		parts = append(parts, chip(glyphBad, t.fg(t.Err), "daemon unreachable · retrying "+spinnerFrames[m.frame%len(spinnerFrames)], t.fg(t.Err)))
@@ -169,6 +169,8 @@ func (m *Model) renderHeader(w int) string {
 	}
 	left := strings.Join(parts, gapStr)
 
+	// Right side, shed least useful first when the row is tight:
+	// in flight → session → flows.
 	var right []string
 	if st.Session != "" {
 		right = append(right, "session "+st.Session)
@@ -177,18 +179,29 @@ func (m *Model) renderHeader(w int) string {
 	if st.ActiveConns > 0 && w >= 120 {
 		right = append(right, fmt.Sprintf("%d in flight", st.ActiveConns))
 	}
-	rs := t.muted().Render(strings.Join(right, " · "))
-	gap := w - ansi.StringWidth(left) - ansi.StringWidth(rs) - 2
-	if gap < 1 {
-		rs = t.muted().Render(right[len(right)-1])
+	var rs string
+	gap := 0
+	for len(right) > 0 {
+		rs = t.muted().Render(strings.Join(right, " · "))
 		gap = w - ansi.StringWidth(left) - ansi.StringWidth(rs) - 2
+		if gap >= 1 {
+			break
+		}
+		switch {
+		case len(right) == 3:
+			right = right[:2]
+		case len(right) == 2 && st.Session != "":
+			right = right[1:]
+		default:
+			right = nil
+		}
 	}
-	if gap < 1 {
+	if len(right) == 0 {
 		rs = ""
 		gap = max(0, w-ansi.StringWidth(left)-1)
 	}
 	row := " " + left + strings.Repeat(" ", gap) + rs
-	return t.raised().Render(line(row, w))
+	return t.raised(line(row, w))
 }
 
 // ---- footer ----
@@ -254,7 +267,7 @@ func (m *Model) renderFooter(w int) string {
 		right = ""
 		gap = 0
 	}
-	return t.raised().Render(line(left+strings.Repeat(" ", gap)+right, w))
+	return t.raised(line(left+strings.Repeat(" ", gap)+right, w))
 }
 
 // ---- filter bar ----
@@ -606,14 +619,14 @@ func (m *Model) rowBG(s string, r api.FlowRow, selected, focused bool) string {
 	t := m.theme()
 	switch {
 	case selected && focused:
-		return t.selected().Render(s)
+		return t.selected(s)
 	case selected:
-		return lipgloss.NewStyle().Bold(true).Render(s)
+		return t.raised(s)
 	}
 	if at, ok := m.table.fresh[r.ID]; ok {
 		age := m.now.Sub(at)
 		if age >= 0 && age < 350*time.Millisecond {
-			return lipgloss.NewStyle().Background(t.AccentDim).Render(s)
+			return t.paint(t.AccentDim, s)
 		}
 		if age > time.Second {
 			delete(m.table.fresh, r.ID)
@@ -636,11 +649,11 @@ func (m *Model) renderList(w, h int, focused bool) []string {
 		s := " " + t.heldChip().Render(fmt.Sprintf(" %s %d held ", glyphHeld, len(m.held))) + "  " +
 			t.secondary().Render(hd.Short) + " " + t.fg(t.Warn).Render(hd.Method) + " " + t.primary().Render(fit(hd.URL, max(10, w-60))) +
 			"   " + t.accent().Render("h") + t.muted().Render(" open")
-		out = append(out, t.raised().Render(line(s, w)))
+		out = append(out, t.raised(line(s, w)))
 		h--
 	}
 	if m.paused && m.mode == modeList {
-		out = append(out, t.raised().Render(line(" "+t.fg(t.Warn).Render(glyphOff+" list paused")+t.muted().Render(" · new flows are still captured · ")+t.accent().Render("space")+t.muted().Render(" resume"), w)))
+		out = append(out, t.raised(line(" "+t.fg(t.Warn).Render(glyphOff+" list paused")+t.muted().Render(" · new flows are still captured · ")+t.accent().Render("space")+t.muted().Render(" resume"), w)))
 		h--
 	}
 	if len(m.visible) == 0 {
@@ -680,6 +693,9 @@ func (m *Model) renderEmpty(w, h int) []string {
 			ca = t.fg(t.Err).Render(glyphBad+" ca untrusted  →  ") + t.secondary().Render("pano ca install")
 		}
 		lines = append(lines, ca+t.faint().Render("     listening "+st.ProxyAddr))
+	}
+	if h >= 8 {
+		lines = append(append(m.renderMascot(), ""), lines...)
 	}
 	top := max(0, (h-len(lines))/2-1)
 	var out []string

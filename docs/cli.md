@@ -89,6 +89,16 @@ is given.
 |---|---|
 | `-y, --yes` | do not prompt (installs the CA if needed) |
 
+On success pano's mascot wakes up next to the status line (a short glance
+around on a colour terminal; one static frame when piped, with `--json`,
+`--quiet` or `NO_COLOR`):
+
+```
+  ╭─────╮
+  │ ◉ ◉ │  ✓ system proxy ON → 127.0.0.1:9091  Wi-Fi
+  ╰─────╯    watch with pano ui · pano tail   turn off with pano off
+```
+
 `off` restores the snapshot and then stops the daemon, so nothing keeps
 running — and the MCP tools report "pano is off" — until the next `on`.
 If the daemon is dead but `~/.pano/sysproxy.json` exists, `off` restores it
