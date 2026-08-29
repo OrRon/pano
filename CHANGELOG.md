@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-30
+
+First tagged release: `brew install orron/tap/pano` · `go install github.com/orron/pano/cmd/pano@latest` · archives on GitHub Releases. Beta — macOS first.
+
 ### Fixed
 - Quitting the `pano on` window (q or ctrl-c) sat for up to 15 s after the daemon had already stopped: the daemon is a child of that process, so once it exited it lingered as a zombie that still answered `kill(pid, 0)`. The CLI now reaps the daemon it spawned and returns the moment it is gone.
 - Turning pano off took up to 8 s while a browser held a streaming or long-poll request open: shutdown waited for the proxy to drain. It now drains for 0.7 s and then closes the remaining connections (the system proxy is already restored by then, so new connections go direct).
@@ -52,3 +56,6 @@ All notable changes to this project are documented here. The format follows
 
 ### Performance
 - Apple M-series, 64 concurrent clients, small JSON responses, capture on: ~70k req/s through pano vs ~146k direct; p50 added latency ≈ 0.4 ms, p99 ≈ 3 ms. Captures are held in memory only, so the proxy path never waits on storage.
+
+[Unreleased]: https://github.com/OrRon/pano/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/OrRon/pano/releases/tag/v0.1.0
