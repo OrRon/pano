@@ -42,7 +42,8 @@ changelog:
       order: 999
 
 release:
-  # 0.x is the beta line; the notes come from the commit groups above.
+  # Only suffixed tags (v0.2.0-rc.1) become GitHub pre-releases: the update
+  # check and brew read /releases/latest, which ignores pre-releases.
   prerelease: auto
   footer: |
     **Install / upgrade:** `brew install orron/tap/pano` · `brew upgrade pano` · `go install github.com/orron/pano/cmd/pano@latest`

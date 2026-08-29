@@ -9,7 +9,10 @@ on a laptop.
 - **GitHub Release** `vX.Y.Z` with `pano_X.Y.Z_{darwin,linux}_{arm64,amd64}.tar.gz`
   (binary + LICENSE, NOTICE, README, CHANGELOG), `checksums.txt` (SHA-256) and an
   SBOM per archive. Notes are grouped from Conventional Commit prefixes
-  (`feat` → Features, `fix` → Fixes). `0.x` tags are marked *pre-release*.
+  (`feat` → Features, `fix` → Fixes). Tags are published as normal releases,
+  not GitHub *pre-releases*, even on the `0.x` line: the update check and
+  `brew` both read `/releases/latest`, which skips pre-releases. Only a tag
+  with a suffix (`v0.2.0-rc.1`) is flagged pre-release (`prerelease: auto`).
 - **Homebrew cask** pushed to [`orron/homebrew-tap`](https://github.com/OrRon/homebrew-tap):
   `brew install orron/tap/pano`, `brew upgrade pano`. The cask clears the
   quarantine bit after install (pano is not notarized yet), runs `pano off`
