@@ -40,10 +40,10 @@ pano on                            # route the Mac's HTTP/HTTPS through pano and
 pano on -b                         # or: run in the background (pano ui · pano tail · pano off)
 ```
 
-Give it to Claude Code:
+Give it to Claude Code (details in [Using pano from an AI agent](#using-pano-from-an-ai-agent)):
 
 ```sh
-claude mcp add --scope user --transport stdio pano -- pano mcp
+pano mcp install                   # or: claude mcp add --scope user --transport stdio pano -- pano mcp
 ```
 
 Then ask things like:
@@ -60,6 +60,176 @@ Prefer not to touch system settings? Wrap a single process instead:
 pano run -- curl https://api.github.com/zen
 pano run -- npm test
 ```
+
+## Using pano from an AI agent
+
+pano's main interface is not the CLI or the TUI — it is the MCP server. `pano mcp`
+speaks the [Model Context Protocol](https://modelcontextprotocol.io) over stdio, so
+any agent that can run a local MCP server gets the full proxy: list and search
+traffic, read exchanges in token-sized pieces, decode LLM calls, diff, replay, and
+inject latency, failures, mocks and breakpoints into live traffic.
+
+### Installing the server
+
+**Claude Code** — one command, either form:
+
+```sh
+pano mcp install                   # runs `claude mcp add` for you, using the pano on your PATH
+claude mcp add --scope user --transport stdio pano -- pano mcp
+```
+
+`--scope user` (the default) makes pano available in every project. Use
+`--scope project` to commit it to a repo's `.mcp.json` for teammates, or
+`--scope local` for this checkout only. Restart Claude Code (or run `/mcp`)
+and you should see `pano` listed with its tools.
+
+**Any other MCP client** that can spawn a local server: add the standard
+stdio entry to its `mcpServers` config:
+
+```json
+{
+  "mcpServers": {
+    "pano": {
+      "type": "stdio",
+      "command": "pano",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+If the client does not inherit your shell `PATH`, use the absolute path from
+`which pano` as `command`.
+
+**Clients that cannot spawn a process** (remote agents, notebooks, anything
+talking HTTP): the daemon also mounts the server as Streamable HTTP on
+loopback. `pano mcp --http` prints the URL, normally
+
+```
+http://127.0.0.1:9092/mcp
+```
+
+It is stateless, loopback-only and unauthenticated — fine on a single-user
+Mac, and switched off with `expose_http = false` in `~/.pano/config.toml`
+if other people share the machine.
+
+**Before the tools do anything useful** you need two things done in a
+terminal, because neither is exposed to agents on purpose:
+
+```sh
+pano ca install                    # trust the local CA (one password prompt)
+pano on                            # or pano on -b — pano only captures while you have it on
+```
+
+`pano mcp` never starts the daemon. While pano is off every tool answers
+`pano is off: … ask the user to run pano on` instead of failing the
+connection, and works again the moment the daemon is back — no client
+restart needed. A good first message to an agent is simply *"is pano on?"*;
+it will call `pano_status` and tell you.
+
+### What an agent can do with it
+
+Every tool returns plain text with a `next:` hint, and every result is
+rendered server-side with the same limits and secret redaction as the CLI
+and the TUI. Grouped by the job you would give an agent:
+
+**See what is happening on the wire**
+
+| Tool | What you get |
+|---|---|
+| `pano_status` | Is pano on, is the system proxy pointed at it, is the CA trusted, what is being decrypted, which phones are connected, how many flows, any dropped events. Agents call this first. |
+| `pano_flows` | One ~40-token line per flow, newest first, with filters: `host` glob, `path`, `method`, `status` (`500`, `4xx`, `!2xx`), `since` (`15m`, `2h`, a flow id), `content_type`, `min_bytes`, `has_error`, `state` (`held`, `failed`, `replayed`, `mocked`…), `kind` (`http`, `websocket`, `tunnel`), `client` (a phone's IP), full-text `q`. |
+| `pano_tail` | Long-poll for new flows with a cursor — the agent loops it while you reproduce a bug, and it also reports requests waiting at a breakpoint. |
+
+**Read one exchange without flooding the context window**
+
+| Tool | What you get |
+|---|---|
+| `pano_flow view=summary` | The default: status, timing, headers, then a ~1.5 KB digest of each body — JSON key types and lengths, notable values, `body:` size and hash. |
+| `pano_flow path=error.message` | A single value picked out of a JSON body with a gjson path (`choices.0.message.content`, `messages.#.role`). |
+| `pano_flow view=schema` | The inferred shape of an unfamiliar payload. |
+| `pano_flow view=truncated\|pretty\|raw` | The body itself, gated by `max_bytes` (default 4 KB, hard cap 1 MiB) — the last resort, not the first. |
+
+The server instructions push agents down that ladder — status → flows →
+summary → path → raw — so a typical investigation reads a few hundred tokens,
+not a few hundred kilobytes.
+
+**Understand LLM traffic**
+
+`pano_flow_explain` recognises Anthropic, OpenAI (Chat and Responses) and
+Gemini calls, streamed or not, and reassembles the SSE stream into what you
+actually want to know: provider and model, how many messages and tools were
+sent, token usage with cache reads and writes, the stop reason, the final text
+and every tool call, and the error if there was one. `include=` adds the
+system prompt, the full message list, thinking blocks or the raw request.
+Ask *"why is my agent loop burning tokens?"* and this is the tool that answers.
+
+**Compare and reproduce**
+
+| Tool | What you get |
+|---|---|
+| `pano_flow_diff a= b=` | Status, URL, headers and a structural JSON diff of two flows (`+`, `-`, `~ path: old → new`), with volatile headers like `date` and `x-request-id` ignored by default. The fastest way to answer "what is different about the one that failed?" |
+| `pano_flow_replay` | Re-sends a captured request through the proxy, optionally with a new URL, method, headers, body or `body_patch{path: value}`, and hands back the new flow id so the agent can diff it against the original. |
+
+**Shape traffic to test how your app copes**
+
+`pano_rule_add` installs a rule that takes effect on the next request. Presets
+cover the common scenarios — `slow_network`, `fail_rate`, `offline_host`,
+`timeout`, `rate_limit`, `hold` — and a full `rule{}` ([docs/rules.md](docs/rules.md))
+can match on host, path, method, headers or body and delay, fail, block,
+mock a response, rewrite headers or hold the exchange. Every rule can carry a
+`ttl_s` so it expires on its own; `pano_rules_list`, `pano_rule_update` and
+`pano_rule_remove` manage them, and the instructions tell agents to clean up
+when they are done.
+
+**Breakpoints**
+
+A `hold` rule stops a matching request (or response) inside pano. `pano_tail`
+reports it as held, and `pano_breakpoint_resume` releases it — as is, edited
+(URL, method, headers, body, `body_patch`, or the response `status`), or
+dropped. *"Hold the next POST to /v1/orders so I can change the amount before
+it goes out"* is one rule and one resume.
+
+**Export, capture control, decryption policy**
+
+| Tool | What you get |
+|---|---|
+| `pano_har` | Export the current session (or a filtered subset) to a HAR 1.2 file, or import one — the file path comes back, never the contents. |
+| `pano_capture` | Start or stop recording, clear the session, or name a new one — without touching system settings. |
+| `pano_decrypt` | Switch between decrypting `all` hosts, `only` a list, or `off`; add hosts to the `never` list; see which hosts recently refused pano's certificate (pinned apps) and add them all with `@rejected`. |
+
+**Resources and prompts**
+
+Alongside the tools, the server publishes `pano://ca.pem` (the public root
+certificate, for `SSL_CERT_FILE` / `NODE_EXTRA_CA_CERTS`), `pano://status`,
+`pano://flows/latest`, `pano://flows/{id}` and
+`pano://flows/{id}/raw.request|response`. Two prompts package whole
+workflows: `debug_failing_request` walks the escalation ladder for one
+failing flow and ends with a root cause and a fix; `simulate_conditions`
+turns *slow / flaky / offline / timeout / rate_limited / hold* into a rule,
+tails the traffic while you exercise the app, and reports resilience bugs.
+
+### What an agent cannot do
+
+Three things stay in your terminal on purpose:
+
+- **Trusting the CA.** `pano ca install` has no MCP equivalent. The password
+  prompt is yours.
+- **Turning pano on.** `pano mcp` never starts the daemon; nothing captures
+  unless you ran `pano on`.
+- **Opening the proxy to the network.** `pano mobile` has no tool; agents can
+  only see which devices connected.
+
+`pano_system_proxy` — routing the whole Mac through pano — does exist, but it
+refuses without `confirm: "yes"`, is annotated destructive, and every toggle
+is written to `~/.pano/audit.log`. Agents are told to prefer
+`pano run -- <cmd>` for one-off commands. And secrets are redacted in every
+result unless the agent passes `reveal_secrets: true` on a single call, which
+is audited too — see [Secrets are redacted unless you ask](#secrets-are-redacted-unless-you-ask).
+
+The full tool catalog, inputs, defaults, token budgets and a worked example are
+in [docs/mcp.md](docs/mcp.md); what the handshake and tool metadata look like
+on the wire is in [docs/mcp-protocol.md](docs/mcp-protocol.md).
 
 ## On, off, and in the background
 
