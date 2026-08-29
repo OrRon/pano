@@ -210,6 +210,9 @@ func (a *App) renderStatus(st api.Status) {
 		ca = off + " " + st.CA.Detail
 	}
 	a.printf("  ca           %s  %s\n", ca, a.c(dim, st.CA.Path))
+	if st.CA.Warning != "" {
+		a.printf("               %s %s\n", a.c(yellow, "warn"), st.CA.Warning)
+	}
 	cap := on + " capturing"
 	if !st.Capturing {
 		cap = off + " paused"

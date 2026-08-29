@@ -113,9 +113,9 @@ Exit 2 when anything fails.
 ### `pano ca install`
 
 Trust the root in the **login keychain** via `security add-trusted-cert`
-(macOS shows one password prompt). Prints the Firefox reminder
-(`security.enterprise_roots.enabled`). On other OSes prints manual
-instructions.
+for the TLS server policy only (`-p ssl -p basic`; macOS shows one password
+prompt). Prints the Firefox reminder (`security.enterprise_roots.enabled`).
+On other OSes prints manual instructions.
 
 | Flag | Meaning |
 |---|---|
@@ -123,11 +123,14 @@ instructions.
 
 ### `pano ca uninstall`
 
-Delete every certificate with pano's subject from the login keychain.
+Delete every certificate with pano's subject from the login keychain, then
+sweep any `pano Root CA (…)` left behind by an earlier rotation.
 
 ### `pano ca status`
 
-Whether the root is present and trusted (`security verify-cert`).
+Whether the root is present and trusted (`security verify-cert`), when it
+expires, and a warning once fewer than 30 days remain or the root was just
+regenerated. `--json` adds `not_after` and `warning`.
 
 ### `pano ca path`
 
@@ -137,7 +140,9 @@ Print `~/.pano/ca.pem` (creating the CA if needed). Handy for
 ### `pano ca reset`
 
 Delete the root, its key, the shared leaf key and the cert cache, and
-generate a new root. Asks for confirmation. Re-run `pano ca install`
+generate a new root. Asks for confirmation. Also the way to renew a root
+that is about to expire (an already-expired root is replaced automatically on
+the next start). Re-run `pano ca install`
 afterwards.
 
 ## Looking at traffic

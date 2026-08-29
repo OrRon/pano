@@ -40,7 +40,10 @@ func (d *Daemon) Status(ctx context.Context) api.Status {
 		Version: d.opts.Version, PID: os.Getpid(), Uptime: store.FormatDuration(time.Since(d.started).Round(time.Second)),
 		ProxyAddr: d.proxy.Addr(), Capturing: d.proxy.Capturing(), Session: d.currentSession(),
 		Flows: d.mem.Len(), FlowsTotal: d.mem.Total(), LastFlowID: d.ids.Last(), ActiveConns: d.proxy.ActiveConns(),
-		CA:          api.CAStatus{Path: d.paths.CACert(), Subject: d.ca.Subject(), Trusted: trust.Installed, Supported: trust.Supported, Detail: trust.Detail},
+		CA: api.CAStatus{
+			Path: d.paths.CACert(), Subject: d.ca.Subject(), NotAfter: d.ca.NotAfter(),
+			Trusted: trust.Installed, Supported: trust.Supported, Detail: trust.Detail, Warning: d.ca.ExpiryWarning(),
+		},
 		SystemProxy: d.SysProxy(ctx), Rules: len(rules), RulesEnabled: enabled, Held: len(d.rules.Held()),
 		Persist: d.db != nil, Bypass: d.proxy.Bypass(), Redaction: d.cfg.Redaction.Enabled, BusSeq: d.bus.Seq(), StartedAt: d.started,
 	}

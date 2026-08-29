@@ -9,8 +9,17 @@ certificates pano mints on the fly, and pano can decrypt that software's HTTPS t
 
 That is the feature. It is also the risk. Please understand it before installing:
 
-- The CA private key lives in `~/.pano/ca.key` with mode `0600`. It never leaves the
-  machine, is never logged, and is never served over the control API or MCP.
+- The CA is generated on first run, per user, on this machine — nothing is shipped in
+  the binary and no two installs share key material. Its private key lives in
+  `~/.pano/ca.key` with mode `0600`; it never leaves the machine, is never logged, and
+  is never served over the control API or MCP.
+- The root is valid for **two years**, not the ten most interception tools use. A leaked
+  key stops being useful when the root expires. Leaf certificates last 30 days and never
+  outlive the root. An expired root is replaced automatically and you re-run
+  `pano ca install`; `pano status` / `pano doctor` warn 30 days ahead.
+- Trust is installed for the **TLS server policy only** (`-p ssl -p basic`), so even a
+  trusted pano root cannot vouch for signed code, S/MIME mail, software updates or
+  packages.
 - pano binds to `127.0.0.1` only. The control socket `~/.pano/pano.sock` is `0600`.
 - pano refuses to run as root.
 - The optional Streamable HTTP MCP endpoint (`127.0.0.1:9092/mcp`) is loopback-only with

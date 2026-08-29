@@ -305,6 +305,11 @@ func (a *App) cmdDoctor() *cobra.Command {
 					a.printf("     run %s\n", a.c(bold, "pano ca install"))
 					problems++
 				}
+				if w := auth.ExpiryWarning(); w != "" {
+					a.printf("%s %s\n", a.c(yellow, "warn"), w)
+				} else {
+					a.printf("%s CA expires %s\n", ok(true), auth.NotAfter().Format("2006-01-02"))
+				}
 			}
 			if running {
 				st, err := c.Status(ctx)

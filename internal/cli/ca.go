@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -63,13 +64,20 @@ func (a *App) cmdCA() *cobra.Command {
 			}
 			st := ca.NewTrustStore().Status(cmd.Context(), a.paths.CACert(), auth.Subject())
 			if a.jsonOut {
-				return a.printJSON(map[string]any{"subject": auth.Subject(), "path": a.paths.CACert(), "trust": st})
+				return a.printJSON(map[string]any{
+					"subject": auth.Subject(), "path": a.paths.CACert(), "not_after": auth.NotAfter(),
+					"trust": st, "warning": auth.ExpiryWarning(),
+				})
 			}
 			mark := a.c(red, "○")
 			if st.Installed {
 				mark = a.c(green, "●")
 			}
-			a.printf("%s %s\n  %s\n  %s\n", mark, auth.Subject(), a.paths.CACert(), st.Detail)
+			a.printf("%s %s\n  %s\n  %s\n  expires %s (%s)\n", mark, auth.Subject(), a.paths.CACert(), st.Detail,
+				auth.NotAfter().Format("2006-01-02"), a.c(dim, "valid "+formatDays(time.Until(auth.NotAfter()))))
+			if w := auth.ExpiryWarning(); w != "" {
+				a.printf("  %s %s\n", a.c(yellow, "warn"), w)
+			}
 			if !st.Installed && st.Supported {
 				a.printf("  run %s\n", a.c(bold, "pano ca install"))
 			}
@@ -98,6 +106,14 @@ func (a *App) cmdCA() *cobra.Command {
 	return cmd
 }
 
+// formatDays renders a remaining lifetime as "N more days" / "expired".
+func formatDays(d time.Duration) string {
+	if d <= 0 {
+		return "expired"
+	}
+	return fmt.Sprintf("%d more days", int(d.Hours()/24))
+}
+
 func (a *App) loadCA() (*ca.Authority, error) {
 	if err := a.paths.Ensure(); err != nil {
 		return nil, err
@@ -111,6 +127,9 @@ func (a *App) caInstall(ctx context.Context, system bool) error {
 	auth, err := a.loadCA()
 	if err != nil {
 		return err
+	}
+	if from := auth.RotatedFrom(); from != "" {
+		a.warn("the previous root CA (%s) had expired; a new one was generated", from)
 	}
 	ts := ca.NewTrustStore()
 	if st := ts.Status(ctx, a.paths.CACert(), auth.Subject()); st.Installed {

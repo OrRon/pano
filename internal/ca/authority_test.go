@@ -1,11 +1,18 @@
 package ca
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -166,5 +173,151 @@ func TestGetCertificateUsesConnectTarget(t *testing.T) {
 	cfg := a.TLSConfig()
 	if cfg.NextProtos[0] != "h2" || cfg.MinVersion != tls.VersionTLS12 {
 		t.Fatalf("tls config %+v", cfg)
+	}
+}
+
+// writeRoot puts a self-signed root with the given validity at opts' paths so
+// tests can exercise expiry without waiting.
+func writeRoot(t *testing.T, opts Options, notBefore, notAfter time.Time) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: SubjectPrefix + "test, 2000-01-01)"},
+		NotBefore:    notBefore, NotAfter: notAfter,
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true, IsCA: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, _ := x509.MarshalECPrivateKey(key)
+	if err := os.MkdirAll(filepath.Dir(opts.CertFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(opts.CertFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil { //nolint:gosec // test fixture
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(opts.KeyFile, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return tmpl.Subject.CommonName
+}
+
+func TestRootLifetimeIsBounded(t *testing.T) {
+	a, err := Load(tempOpts(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	left := time.Until(a.NotAfter())
+	if left > DefaultRootTTL || left < DefaultRootTTL-time.Hour {
+		t.Fatalf("root validity %v, want ≈ %v", left, DefaultRootTTL)
+	}
+	if !strings.HasPrefix(a.Subject(), SubjectPrefix) {
+		t.Fatalf("subject %q lacks prefix %q", a.Subject(), SubjectPrefix)
+	}
+	if a.RotatedFrom() != "" || a.ExpiryWarning() != "" {
+		t.Fatalf("fresh root: rotated=%q warning=%q", a.RotatedFrom(), a.ExpiryWarning())
+	}
+	// Callers cannot ask for a longer-lived root than MaxRootTTL.
+	opts := tempOpts(t)
+	opts.RootTTL = 50 * 365 * 24 * time.Hour
+	b, err := Load(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Until(b.NotAfter()) > MaxRootTTL {
+		t.Fatalf("root TTL not capped: %v", time.Until(b.NotAfter()))
+	}
+}
+
+func TestRootIsUniquePerInstall(t *testing.T) {
+	a, _ := Load(tempOpts(t))
+	b, _ := Load(tempOpts(t))
+	if a.Root().Equal(b.Root()) || a.caKey.Equal(b.caKey) || a.leafKey.Equal(b.leafKey) {
+		t.Fatal("two installs share key material")
+	}
+}
+
+func TestLeafNeverOutlivesRoot(t *testing.T) {
+	opts := tempOpts(t)
+	opts.RootTTL = 10 * 24 * time.Hour // shorter than the 30-day leaf default
+	a, err := Load(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := a.CertFor("short.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Leaf.NotAfter.Equal(a.NotAfter()) {
+		t.Fatalf("leaf NotAfter %v, root %v", c.Leaf.NotAfter, a.NotAfter())
+	}
+	// A leaf pinned to root expiry is still cacheable even though it has
+	// fewer than five days of slack relative to a normal leaf.
+	a.opts.RootTTL = 2 * 24 * time.Hour
+	if c2, _ := a.CertFor("short.example"); c2 != c {
+		t.Fatal("pinned leaf was re-minted instead of served from cache")
+	}
+	if a.ExpiryWarning() == "" || !strings.Contains(a.ExpiryWarning(), "9 days") {
+		t.Fatalf("expected a renewal warning, got %q", a.ExpiryWarning())
+	}
+}
+
+func TestExpiredRootIsRotated(t *testing.T) {
+	opts := tempOpts(t)
+	old := writeRoot(t, opts, time.Now().Add(-48*time.Hour), time.Now().Add(-time.Hour))
+	if err := os.MkdirAll(opts.CacheDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(opts.CacheDir, "stale.example.pem")
+	if err := os.WriteFile(stale, []byte("junk"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a, err := Load(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.RotatedFrom() != old {
+		t.Fatalf("RotatedFrom = %q, want %q", a.RotatedFrom(), old)
+	}
+	if a.Subject() == old || !time.Now().Before(a.NotAfter()) {
+		t.Fatalf("root not replaced: %s until %v", a.Subject(), a.NotAfter())
+	}
+	if !strings.Contains(a.ExpiryWarning(), "pano ca install") {
+		t.Fatalf("warning should tell the user to re-trust: %q", a.ExpiryWarning())
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatal("leaf cache signed by the old root survived rotation")
+	}
+	if fi, _ := os.Stat(opts.KeyFile); fi.Mode().Perm() != 0o600 {
+		t.Fatalf("new key mode %o", fi.Mode().Perm())
+	}
+	// The replacement is persisted: a second Load reuses it quietly.
+	b, err := Load(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !b.Root().Equal(a.Root()) || b.RotatedFrom() != "" {
+		t.Fatal("rotated root not persisted")
+	}
+}
+
+func TestExpiryWarningNearEnd(t *testing.T) {
+	opts := tempOpts(t)
+	writeRoot(t, opts, time.Now().Add(-time.Hour), time.Now().Add(10*24*time.Hour+time.Hour))
+	a, err := Load(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := a.ExpiryWarning(); !strings.Contains(w, "10 days") || !strings.Contains(w, "pano ca reset") {
+		t.Fatalf("warning %q", w)
+	}
+	if a.RotatedFrom() != "" {
+		t.Fatal("a still-valid root must not be rotated")
 	}
 }

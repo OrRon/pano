@@ -8,9 +8,17 @@ keychain; from then on any software that trusts the keychain will accept
 certificates pano mints, and pano can decrypt that software's HTTPS. That is
 the feature and the risk. What limits it:
 
-- The root private key (`~/.pano/ca.key`, mode 0600) never leaves the
-  machine, is never logged, and is never served by the control API or MCP.
-  pano refuses to load it if it is group/world readable.
+- The root is generated on first run, per user, on this machine; no two
+  installs share key material. Its private key (`~/.pano/ca.key`, mode 0600)
+  never leaves the machine, is never logged, and is never served by the
+  control API or MCP. pano refuses to load it if it is group/world readable.
+- The root is valid for two years (leaf certificates 30 days, never past the
+  root). When it expires pano generates a new one and asks you to run
+  `pano ca install` again; `pano status` and `pano doctor` warn 30 days
+  ahead, and `pano ca reset` renews early.
+- Trust is installed for the TLS server policy only, so the root cannot
+  vouch for signed code, S/MIME mail or software updates even if its key
+  leaked.
 - Toward origins pano is a normal TLS client that verifies real certificates
   with the system roots. It does not downgrade anything upstream.
 - The proxy and the MCP HTTP endpoint bind `127.0.0.1`; the control socket is

@@ -23,16 +23,22 @@ func loginKeychain() string {
 	return filepath.Join(home, "Library", "Keychains", "login.keychain-db")
 }
 
-// Install adds the certificate as a trusted root. macOS shows a GUI password
-// prompt; this cannot be suppressed from the command line.
+// trustPolicies limits what the root may vouch for: TLS servers and plain
+// X.509 chains. Without "-p" macOS would also trust it for code signing,
+// S/MIME, software updates and package signing — none of which pano needs and
+// all of which a leaked key could then abuse. (mkcert restricts the same way.)
+var trustPolicies = []string{"-p", "ssl", "-p", "basic"}
+
+// Install adds the certificate as a trusted root for TLS only. macOS shows a
+// GUI password prompt; this cannot be suppressed from the command line.
 func (Keychain) Install(ctx context.Context, certPath, _ string, system bool) error {
 	var cmd *exec.Cmd
 	if system {
-		cmd = exec.CommandContext(ctx, "sudo", "security", "add-trusted-cert", "-d", "-r", "trustRoot",
-			"-k", "/Library/Keychains/System.keychain", certPath)
+		args := append([]string{"security", "add-trusted-cert", "-d", "-r", "trustRoot"}, trustPolicies...)
+		cmd = exec.CommandContext(ctx, "sudo", append(args, "-k", "/Library/Keychains/System.keychain", certPath)...)
 	} else {
-		cmd = exec.CommandContext(ctx, "security", "add-trusted-cert", "-r", "trustRoot",
-			"-k", loginKeychain(), certPath)
+		args := append([]string{"add-trusted-cert", "-r", "trustRoot"}, trustPolicies...)
+		cmd = exec.CommandContext(ctx, "security", append(args, "-k", loginKeychain(), certPath)...)
 	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -41,20 +47,31 @@ func (Keychain) Install(ctx context.Context, certPath, _ string, system bool) er
 	return nil
 }
 
-// Uninstall removes every certificate with the given subject from the login keychain.
+// Uninstall removes every certificate with the given subject from the login
+// keychain, then sweeps roots left behind by earlier rotations (their CN
+// shares SubjectPrefix; "-c" matches by substring).
 func (Keychain) Uninstall(ctx context.Context, _ string, subject string) error {
-	// Delete repeatedly: there may be duplicates from repeated installs.
+	if n, err := deleteBySubject(ctx, subject); err != nil && n == 0 {
+		return err
+	}
+	_, _ = deleteBySubject(ctx, SubjectPrefix) // best effort: stale rotated roots
+	return nil
+}
+
+// deleteBySubject deletes matching certificates until none are left (there
+// may be duplicates from repeated installs) and returns how many it removed.
+func deleteBySubject(ctx context.Context, subject string) (int, error) {
 	for i := 0; i < 10; i++ {
 		cmd := exec.CommandContext(ctx, "security", "delete-certificate", "-c", subject, "-t", loginKeychain())
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
 			if i == 0 {
-				return fmt.Errorf("security delete-certificate: %w", err)
+				return 0, fmt.Errorf("security delete-certificate: %w", err)
 			}
-			return nil
+			return i, nil
 		}
 	}
-	return nil
+	return 10, nil
 }
 
 // Status reports whether the certificate is present and trusted.

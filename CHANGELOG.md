@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+- Root CA now lives 2 years (was 10), is rotated automatically once expired (leaf cache wiped, `pano ca install` prompted again), and `pano ca status` / `pano status` / `pano doctor` / `pano_status` warn 30 days ahead; leaf certificates never outlive the root.
+- `pano ca install` grants keychain trust for the TLS server policy only (`-p ssl -p basic`), so the root cannot vouch for code signing, S/MIME or software updates; `pano ca uninstall` also sweeps roots left by earlier rotations.
+
 ### Added
 - HTTPS MITM engine: CONNECT interception, local CA with per-host leaf certificates, HTTP/1.1 and HTTP/2 inside tunnels, live SSE streaming, WebSocket splice with frame capture, bypass list for pinned hosts, loop guard.
 - Capture pipeline: in-memory ring, content-addressed blob store, write-behind SQLite (WAL, contentless FTS5 full-text search), sessions, retention pruning.

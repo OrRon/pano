@@ -112,6 +112,11 @@ func build(opts Options) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
+	if from := d.ca.RotatedFrom(); from != "" {
+		logger.Warn("root CA expired; generated a new one — run `pano ca install`", "old", from, "new", d.ca.Subject())
+	} else if w := d.ca.ExpiryWarning(); w != "" {
+		logger.Warn(w, "not_after", d.ca.NotAfter())
+	}
 	d.trust = ca.NewTrustStore()
 	view.Extra.Headers = append([]string(nil), cfg.Redaction.ExtraHeaders...)
 	for _, p := range cfg.Redaction.ExtraPatterns {

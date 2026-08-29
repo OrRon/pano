@@ -23,10 +23,26 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
+// Lifetimes. A leaked root key is only useful until the root expires, so the
+// root is short-lived for a CA (two years, like a private dev CA, not the ten
+// most MITM tools ship) and is regenerated automatically once it lapses.
+const (
+	DefaultRootTTL = 2 * 365 * 24 * time.Hour // default root validity
+	MaxRootTTL     = 825 * 24 * time.Hour     // hard cap (Apple's classic ceiling)
+	DefaultLeafTTL = 30 * 24 * time.Hour
+	MaxLeafTTL     = 397 * 24 * time.Hour // Apple rejects longer TLS server certs
+	// RenewWarning is how long before root expiry status output starts nagging.
+	RenewWarning = 30 * 24 * time.Hour
+	// SubjectPrefix starts every root CN pano has ever generated; the rest is
+	// "<hostname>, <date>)" so rotated roots never collide in a trust store.
+	SubjectPrefix = "pano Root CA ("
+)
+
 // Options tune the authority.
 type Options struct {
 	CertFile, KeyFile, LeafKeyFile, CacheDir string
-	LeafTTL                                  time.Duration // default 30d
+	RootTTL                                  time.Duration // default DefaultRootTTL, capped at MaxRootTTL
+	LeafTTL                                  time.Duration // default DefaultLeafTTL, capped at MaxLeafTTL
 	MemCache                                 int           // default 4096
 	Organization                             string        // default "pano"
 }
@@ -38,6 +54,8 @@ type Authority struct {
 	caKey   *ecdsa.PrivateKey
 	caPEM   []byte
 	leafKey *ecdsa.PrivateKey
+	// rotatedFrom is the subject of an expired root that Load replaced.
+	rotatedFrom string
 
 	mu    sync.Mutex
 	lru   *list.List
@@ -58,13 +76,20 @@ type TargetConn interface {
 }
 
 // Load opens the authority at the given paths, generating a root CA and leaf
-// key if they do not exist. Key files must be mode 0600.
+// key if they do not exist. An expired root is replaced by a fresh one (see
+// RotatedFrom). Key files must be mode 0600.
 func Load(opts Options) (*Authority, error) {
-	if opts.LeafTTL == 0 {
-		opts.LeafTTL = 30 * 24 * time.Hour
+	if opts.RootTTL == 0 {
+		opts.RootTTL = DefaultRootTTL
 	}
-	if opts.LeafTTL > 397*24*time.Hour {
-		opts.LeafTTL = 397 * 24 * time.Hour
+	if opts.RootTTL > MaxRootTTL {
+		opts.RootTTL = MaxRootTTL
+	}
+	if opts.LeafTTL == 0 {
+		opts.LeafTTL = DefaultLeafTTL
+	}
+	if opts.LeafTTL > MaxLeafTTL {
+		opts.LeafTTL = MaxLeafTTL
 	}
 	if opts.MemCache == 0 {
 		opts.MemCache = 4096
@@ -96,6 +121,28 @@ func (a *Authority) Root() *x509.Certificate { return a.caCert }
 
 // Subject returns the root CN, used to find it in trust stores.
 func (a *Authority) Subject() string { return a.caCert.Subject.CommonName }
+
+// NotAfter returns when the root expires.
+func (a *Authority) NotAfter() time.Time { return a.caCert.NotAfter }
+
+// RotatedFrom returns the subject of the expired root this Load replaced, or
+// "" when the root on disk was reused. A rotated root must be trusted again.
+func (a *Authority) RotatedFrom() string { return a.rotatedFrom }
+
+// ExpiryWarning returns a human sentence when the root is within RenewWarning
+// of expiring (or has been rotated), else "". Front ends print it verbatim.
+func (a *Authority) ExpiryWarning() string {
+	if a.rotatedFrom != "" {
+		return "root CA expired and was regenerated — run `pano ca install` to trust the new one"
+	}
+	left := time.Until(a.caCert.NotAfter)
+	if left > RenewWarning {
+		return ""
+	}
+	days := int(left.Hours() / 24)
+	return fmt.Sprintf("root CA expires in %d days (%s); pano will regenerate it then and you will need to run `pano ca install` again — or renew now with `pano ca reset`",
+		days, a.caCert.NotAfter.Format("2006-01-02"))
+}
 
 // TLSConfig returns a server config that mints certificates on demand and
 // offers HTTP/2 and HTTP/1.1 via ALPN.
@@ -171,11 +218,16 @@ func (a *Authority) issue(host string) (*tls.Certificate, error) {
 		return nil, fmt.Errorf("ca: serial: %w", err)
 	}
 	now := time.Now()
+	// A leaf must never outlive the root that vouches for it.
+	notAfter := now.Add(a.opts.LeafTTL)
+	if notAfter.After(a.caCert.NotAfter) {
+		notAfter = a.caCert.NotAfter
+	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          serial,
 		Subject:               pkix.Name{CommonName: host, Organization: []string{a.opts.Organization}},
 		NotBefore:             now.Add(-24 * time.Hour),
-		NotAfter:              now.Add(a.opts.LeafTTL),
+		NotAfter:              notAfter,
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
@@ -205,7 +257,7 @@ func (a *Authority) cacheGet(host string) *tls.Certificate {
 		return nil
 	}
 	e := el.Value.(*entry)
-	if !fresh(e.cert.Leaf) {
+	if !a.fresh(e.cert.Leaf) {
 		a.lru.Remove(el)
 		delete(a.index, host)
 		return nil
@@ -230,8 +282,14 @@ func (a *Authority) cachePut(host string, c *tls.Certificate) {
 	}
 }
 
-func fresh(c *x509.Certificate) bool {
-	return c != nil && time.Until(c.NotAfter) > 5*24*time.Hour
+// fresh reports whether a leaf is worth serving: at least five days left, or
+// pinned to the root's own expiry (then nothing longer can be minted anyway).
+func (a *Authority) fresh(c *x509.Certificate) bool {
+	if c == nil {
+		return false
+	}
+	left := time.Until(c.NotAfter)
+	return left > 5*24*time.Hour || (left > 0 && c.NotAfter.Equal(a.caCert.NotAfter))
 }
 
 func (a *Authority) diskPath(host string) string {
@@ -256,7 +314,7 @@ func (a *Authority) diskGet(host string) *tls.Certificate {
 		return nil
 	}
 	leaf, err := x509.ParseCertificate(blk.Bytes)
-	if err != nil || !fresh(leaf) {
+	if err != nil || !a.fresh(leaf) {
 		return nil
 	}
 	// Ensure the cached cert was signed by the current root and key.
@@ -290,6 +348,9 @@ func (a *Authority) loadOrCreateRoot() error {
 		if err != nil {
 			return err
 		}
+		if !time.Now().Before(cert.NotAfter) {
+			return a.rotateRoot(cert.Subject.CommonName)
+		}
 		a.caCert, a.caKey, a.caPEM = cert, key, certB
 		return nil
 	case errors.Is(errC, os.ErrNotExist) && errors.Is(errK, os.ErrNotExist):
@@ -300,6 +361,24 @@ func (a *Authority) loadOrCreateRoot() error {
 		}
 		return fmt.Errorf("ca: read key: %w", errK)
 	}
+}
+
+// rotateRoot discards an expired root (and every leaf it signed) and creates a
+// new one. The old key is overwritten, not kept: it can sign nothing useful.
+func (a *Authority) rotateRoot(oldSubject string) error {
+	for _, p := range []string{a.opts.CertFile, a.opts.KeyFile} {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("ca: rotate: %w", err)
+		}
+	}
+	if a.opts.CacheDir != "" {
+		_ = os.RemoveAll(a.opts.CacheDir)
+	}
+	if err := a.createRoot(); err != nil {
+		return err
+	}
+	a.rotatedFrom = oldSubject
+	return nil
 }
 
 func (a *Authority) createRoot() error {
@@ -324,11 +403,11 @@ func (a *Authority) createRoot() error {
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
-			CommonName:   fmt.Sprintf("pano Root CA (%s, %s)", host, now.Format("2006-01-02")),
+			CommonName:   fmt.Sprintf("%s%s, %s)", SubjectPrefix, host, now.Format("2006-01-02")),
 			Organization: []string{a.opts.Organization},
 		},
 		NotBefore:             now.Add(-24 * time.Hour),
-		NotAfter:              now.AddDate(10, 0, 0),
+		NotAfter:              now.Add(a.opts.RootTTL),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 		IsCA:                  true,

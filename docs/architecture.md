@@ -103,11 +103,15 @@ Key facts:
 - **Two independent TLS sessions**, plaintext in the middle. The upstream
   side is an ordinary Go client with system roots; pano does not weaken
   verification toward origins.
-- The CA (`internal/ca`) is an ECDSA P-256 root (10-year validity, CN
-  `pano Root CA (<hostname>, <date>)`) plus **one shared leaf key**.
-  Leafs are per host (DNS SAN or IP SAN, `serverAuth` EKU, 30-day TTL,
-  capped at 397 days), looked up in an in-memory LRU (4096), then
-  `~/.pano/certs/<host>.pem`, then minted under `singleflight`.
+- The CA (`internal/ca`) is an ECDSA P-256 root generated per user on first
+  run (2-year validity, capped at 825 days, CN
+  `pano Root CA (<hostname>, <date>)`) plus **one shared leaf key**. An
+  expired root is rotated on load (`RotatedFrom`, leaf cache wiped) and the
+  API/CLI carry an `ExpiryWarning` from 30 days out. Leafs are per host (DNS
+  SAN or IP SAN, `serverAuth` EKU, 30-day TTL, capped at 397 days and never
+  past the root's `NotAfter`), looked up in an in-memory LRU (4096), then
+  `~/.pano/certs/<host>.pem`, then minted under `singleflight`. Keychain
+  trust is granted for the `ssl` and `basic` policies only.
 - Plain `http://` proxying (absolute-URI requests) uses the same handler
   without the TLS step. `GET /` or `/_pano/ca.pem` on the proxy port serves
   a tiny page and the root certificate.

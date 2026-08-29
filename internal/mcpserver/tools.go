@@ -279,6 +279,9 @@ func FormatStatus(st api.Status) string {
 	if !st.CA.Trusted {
 		fmt.Fprintf(&b, " — user must run `pano ca install` in a terminal")
 	}
+	if st.CA.Warning != "" {
+		fmt.Fprintf(&b, "\nca warning: %s", st.CA.Warning)
+	}
 	fmt.Fprintf(&b, "\ncapturing: %v  session: %s  flows: %d in memory, %d total, last id %s", st.Capturing, st.Session, st.Flows, st.FlowsTotal, st.LastFlowID.Short())
 	fmt.Fprintf(&b, "\nrules: %d (%d enabled)  held: %d  active conns: %d  redaction: %v", st.Rules, st.RulesEnabled, st.Held, st.ActiveConns, st.Redaction)
 	if st.Dropped > 0 {

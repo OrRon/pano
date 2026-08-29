@@ -64,11 +64,15 @@ type Status struct {
 
 // CAStatus describes the root certificate.
 type CAStatus struct {
-	Path      string `json:"path"`
-	Subject   string `json:"subject"`
-	Trusted   bool   `json:"trusted"`
-	Supported bool   `json:"supported"`
-	Detail    string `json:"detail,omitempty"`
+	Path      string    `json:"path"`
+	Subject   string    `json:"subject"`
+	NotAfter  time.Time `json:"not_after"`
+	Trusted   bool      `json:"trusted"`
+	Supported bool      `json:"supported"`
+	Detail    string    `json:"detail,omitempty"`
+	// Warning is set when the root is about to expire or was just rotated;
+	// front ends print it verbatim.
+	Warning string `json:"warning,omitempty"`
 }
 
 // SysProxy describes macOS system proxy state.

@@ -153,8 +153,8 @@ back into pano).
 ├── daemon.pid           pid of the detached daemon
 ├── daemon.log           daemon + watchdog log (rotated to daemon.log.1 at 20 MiB on start)
 ├── audit.log            reveal_secrets uses and system-proxy toggles, one line each
-├── ca.pem               root certificate (0644; the only file you ever hand to other software)
-├── ca.key               root private key (0600; refused if group/world readable)
+├── ca.pem               root certificate (0644; valid 2 years, regenerated when expired; the only file you ever hand to other software)
+├── ca.key               root private key (0600; generated per user on first run; refused if group/world readable)
 ├── leaf.key             shared private key of all minted leaf certificates (0600)
 ├── certs/<host>.pem     disk cache of minted leafs (30-day TTL)
 ├── pano.db, -wal, -shm  SQLite store (flows, blobs, blob_text, ws_messages, sessions, flows_fts)
