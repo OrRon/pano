@@ -139,8 +139,9 @@ Print `~/.pano/ca.pem` (creating the CA if needed). Handy for
 
 ### `pano ca reset`
 
-Delete the root, its key, the shared leaf key and the cert cache, and
-generate a new root. Asks for confirmation. Also the way to renew a root
+Remove the current root from the login keychain (including any left by
+earlier rotations), delete it, its key, the shared leaf key and the cert
+cache, and generate a new root. Asks for confirmation. Also the way to renew a root
 that is about to expire (an already-expired root is replaced automatically on
 the next start). Re-run `pano ca install`
 afterwards.

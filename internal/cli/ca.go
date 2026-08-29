@@ -86,10 +86,20 @@ func (a *App) cmdCA() *cobra.Command {
 	}
 	reset := &cobra.Command{
 		Use:   "reset",
-		Short: "Generate a new CA (invalidates the old one; re-run install)",
+		Short: "Generate a new CA (removes the old one from the keychain; re-run install)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if !a.confirm("This deletes the current CA and all cached certificates. Continue?") {
+			if !a.confirm("This deletes the current CA, removes it from the keychain and clears cached certificates. Continue?") {
 				return nil
+			}
+			// Untrust the outgoing root first: otherwise a root whose key is
+			// about to be destroyed would stay trusted in the keychain forever.
+			if old, err := a.loadCA(); err == nil {
+				ts := ca.NewTrustStore()
+				if st := ts.Status(cmd.Context(), a.paths.CACert(), old.Subject()); st.Supported {
+					if err := ts.Uninstall(cmd.Context(), a.paths.CACert(), old.Subject()); err != nil {
+						a.warn("could not remove the old CA from the keychain: %v — remove %q by hand", err, old.Subject())
+					}
+				}
 			}
 			for _, p := range []string{a.paths.CACert(), a.paths.CAKey(), a.paths.LeafKey()} {
 				_ = os.Remove(p)
