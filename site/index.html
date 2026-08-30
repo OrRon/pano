@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pano — all-seeing HTTPS proxy for AI agents</title>
+<meta name="description" content="pano decrypts your Mac's HTTPS with a CA only you hold, then hands it to any MCP agent in token-sized pieces. Secrets redacted. Nothing on disk.">
+<link rel="icon" type="image/svg+xml" href="mascot.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#15151A; --raised:#1E1E26; --selected:#2B2B38; --line:#33333F;
+  --fg:#E7E5EF; --fg2:#A9A6B6; --fg3:#6F6D7B; --fg4:#4A4955;
+  --accent:#38C8E8; --ok:#3FCF8E; --redir:#7FA1C9; --warn:#F2B544; --err:#F0605A;
+  --llm:#B692FF; --mock:#F27DB4;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:'Archivo',system-ui,-apple-system,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+code,pre,kbd{font-family:var(--mono)}
+.wrap{max-width:1060px;margin:0 auto;padding:0 24px}
+
+/* ── header ─────────────────────────────── */
+header{border-bottom:1px solid var(--line);background:var(--raised)}
+.nav{display:flex;align-items:center;gap:14px;height:52px}
+.nav .word{font-weight:700;font-size:17px;color:var(--fg)}
+.nav svg{display:block}
+.nav nav{margin-left:auto;display:flex;gap:22px;font-family:var(--mono);font-size:12.5px}
+.nav nav a{color:var(--fg2)}
+.nav nav a:hover{color:var(--accent);text-decoration:none}
+
+/* ── hero ───────────────────────────────── */
+.hero{padding:64px 0 40px}
+.hero .kicker{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--fg3);margin-bottom:20px}
+.hero .kicker b{color:var(--llm);font-weight:500}
+.hero-top{display:flex;gap:36px;align-items:flex-start;flex-wrap:wrap}
+.hero-copy{flex:1 1 480px;min-width:300px}
+h1{font-size:clamp(2.3rem,5.4vw,3.9rem);font-weight:640;font-stretch:112%;line-height:1.04;letter-spacing:-.022em;margin-bottom:18px}
+.hero p.sub{color:var(--fg2);font-size:1.08rem;max-width:52ch}
+.hero p.myth{color:var(--fg3);font-size:.9rem;font-style:italic;margin-top:6px}
+.mascot{flex:0 0 auto;padding-top:14px;margin-left:auto}
+.mascot svg{width:186px;height:auto;display:block;transition:transform .25s ease}
+.mascot svg.happy{transform:translateY(-4px)}
+#mascot .hap{display:none}
+#mascot.happy .hap{display:block}
+#mascot.happy ellipse{display:none}
+.install{margin-top:30px;display:flex;flex-wrap:wrap;gap:12px;align-items:stretch}
+.cmd{display:flex;align-items:center;gap:14px;background:var(--raised);border:1px solid var(--line);padding:11px 16px;font-family:var(--mono);font-size:14px}
+.cmd .p{color:var(--fg4);user-select:none}
+.cmd button{background:none;border:0;color:var(--fg3);font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;cursor:pointer;padding:2px 4px}
+.cmd button:hover{color:var(--accent)}
+.star{display:flex;align-items:center;gap:9px;border:1px solid var(--line);background:var(--raised);padding:11px 16px;font-family:var(--mono);font-size:13px;color:var(--fg)}
+.star:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
+.star .s{color:var(--warn)}
+
+/* ── live flow list ─────────────────────── */
+.pane{margin:40px 0 0;border:1px solid var(--line)}
+.pane-title{display:flex;align-items:center;gap:10px;background:var(--raised);padding:7px 14px;font-family:var(--mono);font-size:12px;color:var(--fg2)}
+.pane-title .dot{color:var(--ok);animation:pulse 2.5s ease-in-out infinite}
+.pane-title .right{margin-left:auto;color:var(--fg3)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.flows{font-family:var(--mono);font-size:12.5px;line-height:1;overflow-x:auto}
+.frow{display:grid;grid-template-columns:3.4rem 3.6rem 3.2rem minmax(10.5rem,15rem) minmax(11rem,1fr) 2.8rem 4.6rem 4.4rem 7.5rem;gap:0 .9rem;align-items:center;padding:7px 14px;min-width:740px;white-space:nowrap}
+.frow.head{color:var(--fg4);font-size:10.5px;letter-spacing:.1em;border-bottom:1px solid var(--line);padding-top:9px;padding-bottom:8px}
+.frow:not(.head):hover{background:var(--selected)}
+.f-id{color:var(--fg3)}
+.f-t{color:var(--fg3);text-align:right}
+.f-m{color:var(--fg2)} .f-m.w{color:var(--warn)}
+.f-h{color:var(--fg2);text-align:right;overflow:hidden}
+.f-p{color:var(--fg);overflow:hidden;text-overflow:ellipsis}
+.f-s{text-align:right}
+.s2{color:var(--ok)} .s3{color:var(--redir)} .s4{color:var(--warn)} .s5{color:var(--err)} .sx{color:var(--fg3)}
+.f-d,.f-b{color:var(--fg3);text-align:right}
+.f-f{color:var(--fg3)}
+.f-f .llm{color:var(--llm)} .f-f .mock{color:var(--mock)} .f-f .str{color:var(--accent)} .f-f .er{color:var(--err)} .f-f .ru{color:var(--warn)}
+.chip{background:var(--accent);color:#15151A;padding:1px 5px;font-weight:600}
+.frow.arrived{animation:flash .7s ease-out}
+@keyframes flash{0%{background:rgba(56,200,232,.16)}100%{background:transparent}}
+.pane-foot{border-top:1px solid var(--line);padding:6px 14px;font-family:var(--mono);font-size:11px;color:var(--fg4)}
+
+/* ── sections ───────────────────────────── */
+section{padding:60px 0 8px}
+.slabel{display:flex;align-items:center;gap:16px;margin-bottom:30px}
+.slabel span{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--fg3);flex:0 0 auto}
+.slabel::after{content:"";flex:1;border-top:1px solid var(--line)}
+h2{font-size:clamp(1.5rem,3vw,2.1rem);font-weight:620;font-stretch:108%;letter-spacing:-.015em;margin-bottom:24px}
+
+/* ask rows */
+.ask{border-top:1px solid var(--line)}
+.ask-row{display:flex;gap:24px;align-items:baseline;justify-content:space-between;padding:17px 2px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.ask-row q{font-size:1.1rem;font-weight:480;quotes:'\201C' '\201D';color:var(--fg)}
+.ask-row .tool{font-family:var(--mono);font-size:12px;color:var(--accent);flex:0 0 auto}
+
+/* features */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0 44px}
+.grid .cell{border-top:1px solid var(--line);padding:18px 0 24px}
+.cell h3{font-size:1.02rem;font-weight:600;margin-bottom:6px}
+.cell h3 .g{font-family:var(--mono);font-weight:500;font-size:.85em;margin-right:8px}
+.cell p{color:var(--fg2);font-size:.93rem}
+.cell code{font-size:.86em;color:var(--fg);background:var(--raised);padding:1px 5px}
+
+/* ladder */
+.ladder{margin-top:6px;background:var(--raised);border:1px solid var(--line);padding:16px 20px;font-family:var(--mono);font-size:13px;overflow-x:auto;white-space:nowrap}
+.ladder .step{color:var(--fg)}
+.ladder .arr{color:var(--fg4);margin:0 10px}
+.ladder .note{display:block;margin-top:9px;font-size:11.5px;color:var(--fg3);white-space:normal}
+
+/* safety */
+.safe{border-top:1px solid var(--line)}
+.safe-row{display:grid;grid-template-columns:minmax(150px,220px) 1fr;gap:24px;padding:14px 2px;border-bottom:1px solid var(--line)}
+.safe-row dt{font-family:var(--mono);font-size:12px;color:var(--fg2);padding-top:2px}
+.safe-row dd{color:var(--fg2);font-size:.94rem}
+.safe-row dd b{color:var(--fg);font-weight:560}
+.safe-row dd code{font-size:.85em;color:var(--fg);background:var(--raised);padding:1px 5px}
+
+/* quickstart */
+.step-row{display:grid;grid-template-columns:2.4rem 1fr;gap:16px;padding:14px 0;border-top:1px solid var(--line)}
+.step-row .n{font-family:var(--mono);color:var(--fg4);font-size:13px;padding-top:6px}
+.step-row pre{background:var(--raised);border:1px solid var(--line);padding:10px 14px;font-size:13.5px;overflow-x:auto}
+.step-row pre .c{color:var(--fg4)}
+.step-row p{color:var(--fg3);font-size:.88rem;margin-top:8px}
+
+/* stats strip + footer */
+.strip{margin:64px 0 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--raised);padding:14px 0;font-family:var(--mono);font-size:12.5px;color:var(--fg2)}
+.strip .wrap{display:flex;gap:12px;flex-wrap:wrap;justify-content:space-between}
+.strip b{color:var(--fg);font-weight:600}
+footer{padding:40px 0 56px;color:var(--fg3);font-size:.9rem}
+footer .cols{display:flex;gap:48px;flex-wrap:wrap;margin-bottom:32px}
+footer h4{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg4);margin-bottom:12px;font-weight:500}
+footer ul{list-style:none}
+footer li{margin-bottom:7px}
+footer li a{color:var(--fg2)}
+footer li code{font-size:.85em;color:var(--fg2)}
+footer .fine{border-top:1px solid var(--line);padding-top:18px;display:flex;gap:16px;flex-wrap:wrap;justify-content:space-between;font-family:var(--mono);font-size:11.5px;color:var(--fg4)}
+
+@media (max-width:640px){
+  .hero{padding:44px 0 24px}
+  .mascot{order:-1;margin-left:0}
+  .frow .f-t,.frow .f-b{display:none}
+  .frow{grid-template-columns:3.2rem 3rem minmax(8rem,11rem) minmax(9rem,1fr) 2.6rem 4.2rem 6.5rem;min-width:560px}
+  .safe-row{grid-template-columns:1fr;gap:6px}
+}
+@media (prefers-reduced-motion:reduce){
+  .pane-title .dot{animation:none}
+  .frow.arrived{animation:none}
+  .mascot svg{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <svg width="34" height="22" viewBox="0 0 160 104" aria-hidden="true"><defs><linearGradient id="gh" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#C44CE6"/><stop offset="1" stop-color="#6C8DF2"/></linearGradient></defs><rect x="2" y="2" width="156" height="100" rx="24" fill="url(#gh)"/><g fill="#fff"><ellipse cx="58" cy="52" rx="10" ry="10"/><ellipse cx="102" cy="52" rx="10" ry="10"/></g></svg>
+    <span class="word">pano</span>
+    <nav>
+      <a href="#agent">agents</a>
+      <a href="#safety">safety</a>
+      <a href="#install">install</a>
+      <a href="https://github.com/OrRon/pano">github</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<div class="hero">
+  <p class="kicker">https proxy · <b>mcp server</b> · macos</p>
+  <div class="hero-top">
+    <div class="hero-copy">
+      <h1>All-seeing HTTPS proxy for&nbsp;AI&nbsp;agents.</h1>
+      <p class="sub">pano decrypts your Mac's traffic with a CA only you hold, then hands it
+      to your agent in token-sized pieces. Secrets redacted. Nothing on disk.</p>
+      <p class="myth">Short for Panoptes, the hundred-eyed giant who never stops watching.</p>
+      <div class="install">
+        <div class="cmd"><span class="p">$</span><code id="brew">brew install orron/tap/pano</code><button data-copy="brew" aria-label="Copy install command">COPY</button></div>
+        <a class="star" id="star" href="https://github.com/OrRon/pano"><span class="s">★</span>Star on GitHub</a>
+      </div>
+    </div>
+    <div class="mascot" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 104" id="mascot">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#C44CE6"/><stop offset="1" stop-color="#6C8DF2"/></linearGradient></defs>
+        <rect x="2" y="2" width="156" height="100" rx="24" fill="url(#g)"/>
+        <g id="eyes" fill="#fff" stroke="none">
+          <ellipse id="eL" cx="58" cy="52" rx="10" ry="10"/>
+          <ellipse id="eR" cx="102" cy="52" rx="10" ry="10"/>
+          <path class="hap" d="M46 58 Q58 42 70 58" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
+          <path class="hap" d="M90 58 Q102 42 114 58" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <div class="pane" aria-label="Live capture demo">
+    <div class="pane-title"><span class="dot">●</span> pano · live <span class="right">system proxy → 127.0.0.1:9091 · decrypt all</span></div>
+    <div class="flows" id="flows">
+      <div class="frow head"><span>ID</span><span class="f-t">TIME</span><span>METH</span><span class="f-h">HOST</span><span>PATH</span><span class="f-s">ST</span><span class="f-d">DUR</span><span class="f-b">SIZE</span><span>FLAGS</span></div>
+    </div>
+    <div class="pane-foot">demo rows · real captures stay in memory and never leave your Mac</div>
+  </div>
+</div>
+
+<section id="agent">
+  <div class="slabel"><span>what you ask</span></div>
+  <h2>Your agent is the interface.</h2>
+  <div class="ask">
+    <div class="ask-row"><q>what did my app send to api.openai.com and why did it 429?</q><span class="tool">pano_flows → pano_flow</span></div>
+    <div class="ask-row"><q>explain the last Claude call: final message, tool calls, token usage</q><span class="tool">pano_flow_explain</span></div>
+    <div class="ask-row"><q>make api.stripe.com fail 30% of the time during the checkout tests</q><span class="tool">pano_rule_add fail_rate</span></div>
+    <div class="ask-row"><q>hold the next POST to /v1/orders so I can edit it first</q><span class="tool">hold → pano_breakpoint_resume</span></div>
+    <div class="ask-row"><q>diff the failing request against the one that worked</q><span class="tool">pano_flow_diff</span></div>
+  </div>
+  <div class="ladder">
+    <span class="step">pano_status</span><span class="arr">→</span><span class="step">pano_flows</span><span class="arr">→</span><span class="step">view=summary</span><span class="arr">→</span><span class="step">path=usage.output_tokens</span><span class="arr">→</span><span class="step">view=raw</span>
+    <span class="note">a typical investigation reads a few hundred tokens, not kilobytes</span>
+  </div>
+</section>
+
+<section>
+  <div class="slabel"><span>what it does</span></div>
+  <div class="grid">
+    <div class="cell"><h3><span class="g" style="color:var(--accent)">▾</span>Decrypts HTTPS</h3><p>HTTP/1.1, HTTP/2, WebSocket, SSE. Your CA decides: <code>all</code>, <code>only</code> a list, or <code>never</code>.</p></div>
+    <div class="cell"><h3><span class="g" style="color:var(--llm)">◆</span>Understands LLM traffic</h3><p>Anthropic, OpenAI and Gemini streams reassembled: final text, tool calls, token usage.</p></div>
+    <div class="cell"><h3><span class="g" style="color:var(--warn)">⚡︎</span>Agent-driven chaos</h3><p>Latency, failure rates, mocks, holds. Every rule can expire on its own.</p></div>
+    <div class="cell"><h3><span class="g" style="color:var(--ok)">·</span>Token-efficient</h3><p>One line per flow. Summaries before bodies. A path into any payload.</p></div>
+    <div class="cell"><h3><span class="g" style="color:var(--mock)">◇</span>A TUI that doesn't look like one</h3><p><code>pano ui</code>: live list, explain, diff, rules. Designed, not default.</p></div>
+    <div class="cell"><h3><span class="g" style="color:var(--fg3)">○</span>Fast and forgetful</h3><p>One static Go binary. Everything in memory. Every start is empty.</p></div>
+  </div>
+</section>
+
+<section id="safety">
+  <div class="slabel"><span>safety</span></div>
+  <h2>Built like it knows it's a man-in-the-middle.</h2>
+  <dl class="safe">
+    <div class="safe-row"><dt>your CA, yours alone</dt><dd>Generated on your machine, for your user. <b>TLS trust only</b>. Valid 2 years, not 10.</dd></div>
+    <div class="safe-row"><dt>terminal only</dt><dd>Trusting the CA and turning pano on have <b>no MCP equivalent</b>. The password prompt is yours.</dd></div>
+    <div class="safe-row"><dt>secrets redacted</dt><dd>Keys, cookies and tokens masked in every view. Revealing is explicit, per call, audited.</dd></div>
+    <div class="safe-row"><dt>loopback only</dt><dd>Never root. Quitting restores your proxy settings, even after a crash.</dd></div>
+    <div class="safe-row"><dt>no phoning home</dt><dd>One notify-only release check a day, off with <code>DO_NOT_TRACK=1</code>. pano never updates itself.</dd></div>
+  </dl>
+</section>
+
+<section id="install">
+  <div class="slabel"><span>quickstart · 60 seconds</span></div>
+  <div class="steps">
+    <div class="step-row"><span class="n">1</span><div><pre><code>brew install orron/tap/pano
+pano ca install      <span class="c"># one-time: trust the local CA</span></code></pre></div></div>
+    <div class="step-row"><span class="n">2</span><div><pre><code>pano on              <span class="c"># route the Mac through pano · q quits &amp; restores</span></code></pre></div></div>
+    <div class="step-row"><span class="n">3</span><div><pre><code>pano mcp install     <span class="c"># adds the MCP server to Claude Code</span></code></pre><p>Then ask your agent: <em>"is pano on?"</em></p></div></div>
+  </div>
+</section>
+
+</main>
+
+<div class="strip">
+  <div class="wrap">
+    <span><b>~71k req/s</b> proxied · ~148k direct</span>
+    <span><b>+0.4 ms</b> p50 added latency</span>
+    <span><b>0 bytes</b> written to disk</span>
+    <span><b>1</b> static binary</span>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="cols">
+      <div><h4>install</h4><ul>
+        <li><code>brew install orron/tap/pano</code></li>
+        <li><code>go install github.com/orron/pano/cmd/pano@latest</code></li>
+        <li><a href="https://github.com/OrRon/pano/releases">tarball + checksums</a></li>
+      </ul></div>
+      <div><h4>read</h4><ul>
+        <li><a href="https://github.com/OrRon/pano#readme">readme</a></li>
+        <li><a href="https://github.com/OrRon/pano/blob/main/docs/mcp.md">mcp tool catalog</a></li>
+        <li><a href="https://github.com/OrRon/pano/blob/main/docs/architecture.md">architecture</a></li>
+        <li><a href="https://github.com/OrRon/pano/blob/main/SECURITY.md">security</a></li>
+      </ul></div>
+      <div><h4>project</h4><ul>
+        <li><a href="https://github.com/OrRon/pano">github.com/OrRon/pano</a></li>
+        <li><a href="https://github.com/OrRon/pano/issues">issues</a></li>
+        <li><a href="https://github.com/OrRon/pano/blob/main/CHANGELOG.md">changelog</a></li>
+      </ul></div>
+    </div>
+    <div class="fine">
+      <span>Apache-2.0 · pre-1.0 · macOS first</span>
+      <span>a MITM proxy for your own machine, and only yours</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  document.querySelectorAll('[data-copy]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var t=document.getElementById(b.dataset.copy).textContent;
+      navigator.clipboard.writeText(t).then(function(){
+        b.textContent='COPIED'; setTimeout(function(){b.textContent='COPY';},1400);
+      });
+    });
+  });
+
+  /* ── live flow list demo ── */
+  var POOL=[
+    ['POST','api.anthropic.com','/v1/messages',200,'2.41s','18.2k',[['◆','llm'],['stream','str']]],
+    ['GET','api.github.com','/repos/orron/pano',200,'142ms','3.1k',[]],
+    ['POST','api.openai.com','/v1/chat/completions',429,'310ms','892',[['◆','llm'],['err','er']]],
+    ['POST','api.stripe.com','/v1/charges',500,'89ms','412',[['rule','ru'],['err','er']]],
+    ['GET','o.pki.goog','/wr2',200,'38ms','1.4k',[]],
+    ['CONNECT','push.apple.com',':443',0,'—','—',[['tunnel','']]],
+    ['GET','api.example.dev','/health',200,'8ms','96',[['◇','mock']]],
+    ['GET','api.slack.com','/websocket',101,'—','—',[['ws','str']]],
+    ['POST','generativelanguage.googleapis.com','/v1beta/models',200,'1.87s','9.4k',[['◆','llm'],['stream','str']]],
+    ['GET','registry.npmjs.org','/react',304,'61ms','—',[]],
+    ['POST','api.shop.dev','/v1/orders',-1,'—','—',[]],
+    ['GET','api.anthropic.com','/v1/models',200,'96ms','2.2k',[]],
+    ['PUT','s3.amazonaws.com','/builds/pano.tgz',200,'640ms','1.2M',[]],
+    ['GET','api.stripe.com','/v1/charges',200,'118ms','1.8k',[['replay','']]]
+  ];
+  var list=document.getElementById('flows');
+  var MAX=9, idx=0, clock=41;
+  function id(){var s='f';var a='abcdefghjkmnpqrstuvwxyz023456789';for(var i=0;i<4;i++)s+=a[Math.random()*a.length|0];return s;}
+  function stClass(s){return s>=500?'s5':s>=400?'s4':s>=300?'s3':s>=200?'s2':'sx';}
+  function row(d,ago){
+    var el=document.createElement('div');el.className='frow';
+    var st=d[3]===-1?'<span class="chip">‖ HELD</span>':d[3]===0?'<span class="sx">—</span>':'<span class="'+stClass(d[3])+'">'+d[3]+'</span>';
+    var flags=d[6].map(function(f){return '<span class="'+f[1]+'">'+f[0]+'</span>';}).join(' ');
+    el.innerHTML='<span class="f-id">'+id()+'</span><span class="f-t">'+ago+'</span>'
+      +'<span class="f-m'+(d[0]==='GET'||d[0]==='CONNECT'?'':' w')+'">'+d[0]+'</span>'
+      +'<span class="f-h">'+d[1]+'</span><span class="f-p">'+d[2]+'</span>'
+      +'<span class="f-s">'+st+'</span><span class="f-d">'+d[4]+'</span><span class="f-b">'+d[5]+'</span>'
+      +'<span class="f-f">'+flags+'</span>';
+    return el;
+  }
+  function trim(){while(list.children.length>MAX+1)list.removeChild(list.lastChild);}
+  for(var i=6;i>=0;i--){list.insertBefore(row(POOL[i%POOL.length],(clock-i*5)+'s'),list.children[1]);}
+  idx=7;
+  function arrive(){
+    var el=row(POOL[idx%POOL.length],'now');idx++;
+    if(!reduced)el.classList.add('arrived');
+    list.insertBefore(el,list.children[1]);trim();
+    dartUntil=performance.now()+700;
+    setTimeout(function(){var t=el.querySelector('.f-t');if(t)t.textContent='2s';},2000);
+  }
+  var timer=null;
+  function loop(){timer=setTimeout(function(){arrive();loop();},1800+Math.random()*2600);}
+  if(!reduced)loop();
+  document.addEventListener('visibilitychange',function(){
+    if(document.hidden){clearTimeout(timer);}else if(!reduced){loop();}
+  });
+
+  /* ── mascot: squints, follows the mouse, blinks, happy near the star ── */
+  var svg=document.getElementById('mascot'), eyes=document.getElementById('eyes');
+  var eL=document.getElementById('eL'), eR=document.getElementById('eR');
+  var star=document.getElementById('star');
+  var mx=-1,my=-1,lastMove=0,seen=false;
+  var x=0,y=0,tx=0,ty=0,ry=10,tRy=10;
+  var dartUntil=0,blinkT=0,nextBlink=performance.now()+2600;
+  var rects=null,rectsAt=0,wanderAt=0;
+  document.addEventListener('mousemove',function(e){mx=e.clientX;my=e.clientY;seen=true;lastMove=performance.now();});
+  function measure(t){
+    if(rects&&t-rectsAt<200)return;
+    rectsAt=t;
+    var m=svg.getBoundingClientRect(),s=star.getBoundingClientRect();
+    rects={cx:m.left+m.width/2,cy:m.top+m.height/2,s:s};
+  }
+  function frame(t){
+    measure(t);
+    var happy=false;
+    if(seen){
+      var dx=mx-rects.cx,dy=my-rects.cy,d=Math.hypot(dx,dy)||1;
+      var m=Math.min(11,d*.07);
+      tx=dx/d*m; ty=dy/d*m*.7;
+      tRy=(t-lastMove>2400)?10:(d<260?6.2:7.8);           /* squints while it watches you */
+      var s=rects.s;
+      var nx=Math.max(s.left,Math.min(mx,s.right)),ny=Math.max(s.top,Math.min(my,s.bottom));
+      happy=Math.hypot(mx-nx,my-ny)<110;                   /* happy eyes near the star */
+    }else if(t>wanderAt){                                  /* no mouse: idle glances */
+      wanderAt=t+2600+Math.random()*2000;
+      tx=(Math.random()*16-8)|0; ty=(Math.random()*7-2)|0; tRy=10;
+    }
+    if(t<dartUntil&&!happy){tx=-7;ty=7;tRy=7.5;}           /* glance at a new flow */
+    svg.classList.toggle('happy',happy);
+    x+=(tx-x)*.14; y+=(ty-y)*.14; ry+=(tRy-ry)*.14;
+    if(t>nextBlink){blinkT=t;nextBlink=t+2600+Math.random()*2600;}
+    var bf=1;
+    if(blinkT){var p=(t-blinkT)/150;if(p>=1){blinkT=0;}else{bf=p<.5?1-p*1.84:.08+(p-.5)*1.84;}}
+    eyes.setAttribute('transform','translate('+x.toFixed(2)+' '+y.toFixed(2)+')');
+    var r=Math.max(1,ry*bf).toFixed(2);
+    eL.setAttribute('ry',r);eR.setAttribute('ry',r);
+    requestAnimationFrame(frame);
+  }
+  if(!reduced)requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
