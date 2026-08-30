@@ -386,8 +386,8 @@ never downloads or installs anything. `PANO_NO_UPDATE_CHECK=1`,
 ## Performance
 
 Apple M-series, 64 concurrent clients, small JSON responses, capture on
-(`bench/run.sh`): **~70k req/s through pano vs ~146k direct, p50 added latency
-≈ 0.4 ms, p99 ≈ 3 ms**. Bodies stream through unbuffered (SSE tokens arrive
+(`bench/run.sh`): **~71k req/s through pano vs ~148k direct, p50 added latency
+≈ 0.4 ms, p99 ≈ 3.4 ms**. Bodies stream through unbuffered (SSE tokens arrive
 live); captures are kept in memory only, so the proxy never waits on
 storage.
 
