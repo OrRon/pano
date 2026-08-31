@@ -5,16 +5,30 @@ issue if one of these matters to you.
 
 ## Distribution
 
-- [ ] **Homebrew tap.** `.goreleaser.yaml` already has a `homebrew_casks`
-      block pointing at `orron/homebrew-tap`, and `release.yml` expects a
-      `HOMEBREW_TAP_GITHUB_TOKEN` secret. Neither the tap repo nor the secret
-      exists yet, so a tagged release would fail at the publish step. To
-      enable: create `github.com/orron/homebrew-tap`, add a fine-grained token
-      with `contents: write` on it as the `HOMEBREW_TAP_GITHUB_TOKEN` repo
-      secret, then tag. Until then install with
-      `go install github.com/orron/pano/cmd/pano@latest`.
-- [ ] First tagged release (`v0.1.0`) via goreleaser once the above is settled
-      (or the `homebrew_casks` block is removed for the first release).
+- [x] **Homebrew tap.** `brew install orron/tap/pano` — live since v0.1.0.
+- [x] First tagged release: v0.1.0, 2026-08-30, via goreleaser.
+- [ ] `pano update` self-replace (today the update check is notify-only).
+- [ ] Code signing / notarization (would replace the cask's quarantine-bit
+      hook).
+
+## Enterprise features
+
+- [ ] **PAC-aware upstream chaining.** On managed Macs a corporate agent
+      (Zscaler, Netskope, Koi Security, …) pushes an Automatic Proxy
+      Configuration (PAC) URL; `pano on` snapshots it and turns it off so
+      capture works (a PAC overrides manual proxies in Chrome and most apps),
+      which also takes the machine out of the corporate filter for the
+      session. The better answer — what Proxyman's External Proxy does since
+      3.2.0 — is to keep the filter in the path: evaluate the PAC per request
+      (run `FindProxyForURL` with a small embedded JS engine, e.g. goja) and
+      forward upstream to the proxy it names, `DIRECT` as fallback. Config
+      sketch: `[upstream] pac_url = "…"` or `pac = "auto"` to reuse the PAC
+      pano just snapshotted; plus a plain `[upstream] proxy = host:port` for
+      fixed corporate proxies. Needs: PAC fetch + cache, evaluator, per-request
+      dial-through-upstream in the proxy engine (CONNECT-over-CONNECT for
+      https), auth passthrough, `pano status` line naming the upstream.
+- [ ] Fixed upstream proxy without PAC (`[upstream] proxy`, with bypass
+      list) — the simpler half of the above, useful on its own.
 
 ## Platforms
 
