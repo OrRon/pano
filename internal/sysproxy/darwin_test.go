@@ -44,19 +44,23 @@ func newFake(t *testing.T) *fakeSystem {
 	return &fakeSystem{
 		t: t,
 		state: map[string]*serviceState{
-			"Chromatic - Player 01": {Name: "Chromatic - Player 01"},
-			"Thunderbolt Bridge":    {Name: "Thunderbolt Bridge", Bypass: []string{"*.local"}},
+			"Chromatic - Player 01": {Name: "Chromatic - Player 01", Auto: &autoProxy{}},
+			"Thunderbolt Bridge":    {Name: "Thunderbolt Bridge", Bypass: []string{"*.local"}, Auto: &autoProxy{}},
 			"Wi-Fi": {
 				Name:   "Wi-Fi",
 				Web:    proxySetting{Enabled: true, Server: "proxy.corp.example", Port: 8080},
 				Secure: proxySetting{Enabled: false, Server: "127.0.0.1", Port: 9090},
 				Bypass: []string{"*.local", "169.254/16", "*.corp.example"},
+				// A corporate agent's PAC, like Koi Security's: it overrides
+				// manual proxies in Chrome until pano turns it off.
+				Auto: &autoProxy{URL: "http://pac.corp.example/proxy.pac", Enabled: true},
 			},
 			"TunnelBear": {
 				Name:   "TunnelBear",
 				Web:    proxySetting{Server: "127.0.0.1", Port: 9090},
 				Secure: proxySetting{Server: "127.0.0.1", Port: 9090},
 				Bypass: []string{"*.local", "169.254/16"},
+				Auto:   &autoProxy{Discovery: true},
 			},
 		},
 	}
@@ -69,6 +73,10 @@ func (f *fakeSystem) snapshotState() map[string]serviceState {
 	for k, v := range f.state {
 		c := *v
 		c.Bypass = append([]string(nil), v.Bypass...)
+		if v.Auto != nil {
+			a := *v.Auto
+			c.Auto = &a
+		}
 		out[k] = c
 	}
 	return out
@@ -162,10 +170,48 @@ func (f *fakeSystem) networksetup(args []string, admin bool) (string, error) {
 		} else {
 			svc.Bypass = append([]string(nil), args[2:]...)
 		}
+	case "-getautoproxyurl":
+		return formatAutoProxy(svc.auto()), nil
+	case "-getproxyautodiscovery":
+		if svc.auto().Discovery {
+			return "Auto Proxy Discovery: On\n", nil
+		}
+		return "Auto Proxy Discovery: Off\n", nil
+	case "-setautoproxyurl":
+		if args[2] == "" {
+			return "", &cmdError{name: networksetupPath, args: args, code: 1, stdout: "** Error: The parameters were not valid.\n"}
+		}
+		a := svc.auto()
+		a.URL, a.Enabled = args[2], true
+	case "-setautoproxystate":
+		svc.auto().Enabled = args[2] == "on"
+	case "-setproxyautodiscovery":
+		svc.auto().Discovery = args[2] == "on"
 	default:
 		f.t.Fatalf("unexpected networksetup op %q", op)
 	}
 	return "", nil
+}
+
+// auto returns the service's auto-proxy config, allocating it when a test
+// hand-built a serviceState without one.
+func (s *serviceState) auto() *autoProxy {
+	if s.Auto == nil {
+		s.Auto = &autoProxy{}
+	}
+	return s.Auto
+}
+
+func formatAutoProxy(a *autoProxy) string {
+	url := a.URL
+	if url == "" {
+		url = "(null)"
+	}
+	enabled := "No"
+	if a.Enabled {
+		enabled = "Yes"
+	}
+	return fmt.Sprintf("URL: %s\nEnabled: %s\n", url, enabled)
 }
 
 func formatProxy(p proxySetting) string {
@@ -459,6 +505,9 @@ func TestDisableRestoresExactPriorState(t *testing.T) {
 		if !reflect.DeepEqual(got.Bypass, want.Bypass) {
 			t.Fatalf("%s bypass = %q, want %q", name, got.Bypass, want.Bypass)
 		}
+		if !reflect.DeepEqual(got.Auto, want.Auto) {
+			t.Fatalf("%s auto = %+v, want %+v", name, got.Auto, want.Auto)
+		}
 	}
 
 	// Wi-Fi had a foreign proxy enabled: it must be re-pointed and turned on,
@@ -474,6 +523,9 @@ func TestDisableRestoresExactPriorState(t *testing.T) {
 		{"-setwebproxystate", "Wi-Fi", "on"},
 		{"-setsecurewebproxystate", "Wi-Fi", "off"},
 		{"-setproxybypassdomains", "Wi-Fi", "*.local", "169.254/16", "*.corp.example"},
+		{"-setautoproxyurl", "Wi-Fi", "http://pac.corp.example/proxy.pac"},
+		{"-setautoproxystate", "Wi-Fi", "on"},
+		{"-setproxyautodiscovery", "Wi-Fi", "off"},
 	}
 	if !reflect.DeepEqual(wifi, want) {
 		t.Fatalf("Wi-Fi restore commands:\n got %q\nwant %q", wifi, want)
@@ -637,8 +689,8 @@ func TestPrivilegeFallback(t *testing.T) {
 			}
 		}
 	}
-	if direct != 1 || admin != 9 {
-		t.Fatalf("direct=%d admin=%d set calls, want 1 and 9", direct, admin)
+	if direct != 1 || admin != 15 {
+		t.Fatalf("direct=%d admin=%d set calls, want 1 and 15", direct, admin)
 	}
 	if got := f.snapshotState()["Wi-Fi"].Web; got != (proxySetting{Enabled: true, Server: "127.0.0.1", Port: 9091}) {
 		t.Fatalf("Wi-Fi not set through admin path: %+v", got)
@@ -755,7 +807,7 @@ func TestStatus(t *testing.T) {
 	if want := []string{"Chromatic - Player 01", "Wi-Fi", "TunnelBear"}; !reflect.DeepEqual(st.Services, want) {
 		t.Fatalf("services = %q, want %q", st.Services, want)
 	}
-	if want := "3 services (Chromatic - Player 01, Wi-Fi, TunnelBear) → 127.0.0.1:9091"; st.Detail != want {
+	if want := "3 services (Chromatic - Player 01, Wi-Fi, TunnelBear) → 127.0.0.1:9091; auto proxy config turned off on Wi-Fi, TunnelBear — `pano off` restores it"; st.Detail != want {
 		t.Fatalf("detail = %q, want %q", st.Detail, want)
 	}
 
@@ -794,7 +846,8 @@ func TestStatusSingleServiceDetail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "1 service (Wi-Fi) → proxy.corp.example:8080"; st.Detail != want {
+	want := "1 service (Wi-Fi) → proxy.corp.example:8080; auto proxy config (PAC) is ON for Wi-Fi (http://pac.corp.example/proxy.pac) — it overrides pano in Chrome and most apps; re-run `pano on` to turn it off"
+	if st.Detail != want {
 		t.Fatalf("detail = %q, want %q", st.Detail, want)
 	}
 }
@@ -828,5 +881,109 @@ func TestNewReturnsRealManager(t *testing.T) {
 	// Reading state is the only thing that is safe to exercise for real.
 	if restored, err := m.RestoreStale(context.Background()); err != nil || restored {
 		t.Fatalf("RestoreStale on fresh manager = %v, %v", restored, err)
+	}
+}
+
+func TestEnableDisablesAutoProxyAndDisableRestoresIt(t *testing.T) {
+	f := newFake(t)
+	m, _ := newTestManager(t, f)
+	ctx := context.Background()
+	if err := m.Enable(ctx, "127.0.0.1", 9091, nil); err != nil {
+		t.Fatal(err)
+	}
+	after := f.snapshotState()
+	if a := after["Wi-Fi"].Auto; a.Enabled || a.URL != "http://pac.corp.example/proxy.pac" {
+		t.Fatalf("Wi-Fi auto after Enable = %+v", a)
+	}
+	if after["TunnelBear"].Auto.Discovery {
+		t.Fatal("TunnelBear auto-discovery still on after Enable")
+	}
+	if a := after["Thunderbolt Bridge"].Auto; !reflect.DeepEqual(a, &autoProxy{}) {
+		t.Fatalf("disabled service auto config touched: %+v", a)
+	}
+
+	// The corporate agent re-asserts its PAC mid-session: Status must warn.
+	f.mu.Lock()
+	f.state["Wi-Fi"].Auto.Enabled = true
+	f.mu.Unlock()
+	st, err := m.Status(ctx, "127.0.0.1", 9091)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(st.Detail, "overrides pano") || !strings.Contains(st.Detail, "pac.corp.example") {
+		t.Fatalf("no PAC warning in detail %q", st.Detail)
+	}
+
+	if err := m.Disable(ctx); err != nil {
+		t.Fatal(err)
+	}
+	restored := f.snapshotState()
+	if a := restored["Wi-Fi"].Auto; !a.Enabled || a.URL != "http://pac.corp.example/proxy.pac" || a.Discovery {
+		t.Fatalf("Wi-Fi auto after Disable = %+v", a)
+	}
+	if a := restored["TunnelBear"].Auto; !a.Discovery || a.Enabled {
+		t.Fatalf("TunnelBear auto after Disable = %+v", a)
+	}
+}
+
+func TestEnableFillsAutoIntoLegacySnapshot(t *testing.T) {
+	f := newFake(t)
+	m, statePath := newTestManager(t, f)
+	ctx := context.Background()
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{
+  "version": 1,
+  "set_at": "2026-08-28T11:00:00Z",
+  "pano": {"host": "127.0.0.1", "port": 9091},
+  "services": [
+    {"name": "Wi-Fi", "web": {"enabled": true, "server": "proxy.corp.example", "port": 8080},
+     "secure": {"enabled": false, "server": "", "port": 0}, "bypass": []}
+  ]
+}`
+	if err := os.WriteFile(statePath, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Enable(ctx, "127.0.0.1", 9092, nil); err != nil {
+		t.Fatal(err)
+	}
+	snap := readState(t, statePath)
+	want := &autoProxy{URL: "http://pac.corp.example/proxy.pac", Enabled: true}
+	if !reflect.DeepEqual(snap.Services[0].Auto, want) {
+		t.Fatalf("legacy snapshot auto = %+v, want %+v", snap.Services[0].Auto, want)
+	}
+	if f.snapshotState()["Wi-Fi"].Auto.Enabled {
+		t.Fatal("PAC still enabled after Enable over a legacy snapshot")
+	}
+	if err := m.Disable(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !f.snapshotState()["Wi-Fi"].Auto.Enabled {
+		t.Fatal("PAC not restored by Disable")
+	}
+}
+
+func TestRestoreLeavesAutoAloneWhenNotCaptured(t *testing.T) {
+	for _, c := range restoreCommands(serviceState{Name: "Wi-Fi"}) {
+		if strings.HasPrefix(c[0], "-setautoproxy") || c[0] == "-setproxyautodiscovery" {
+			t.Fatalf("auto-proxy command %q emitted for a snapshot without auto state", c)
+		}
+	}
+}
+
+func TestParseAutoProxy(t *testing.T) {
+	if got := parseAutoProxy("URL: (null)\nEnabled: No\n"); !reflect.DeepEqual(got, &autoProxy{}) {
+		t.Fatalf("unset PAC parsed as %+v", got)
+	}
+	got := parseAutoProxy("URL: https://assets.corp.example/pac/x.pac\nEnabled: Yes\n")
+	if got.URL != "https://assets.corp.example/pac/x.pac" || !got.Enabled {
+		t.Fatalf("PAC parsed as %+v", got)
+	}
+	if parseDiscovery("Auto Proxy Discovery: Off\n") {
+		t.Fatal("discovery Off parsed as on")
+	}
+	if !parseDiscovery("Auto Proxy Discovery: On\n") {
+		t.Fatal("discovery On parsed as off")
 	}
 }

@@ -116,6 +116,19 @@ type serviceState struct {
 	Web    proxySetting `json:"web"`
 	Secure proxySetting `json:"secure"`
 	Bypass []string     `json:"bypass"`
+	// Auto is the automatic proxy configuration. nil means the snapshot
+	// predates auto-proxy handling; restore then leaves those settings alone.
+	Auto *autoProxy `json:"auto,omitempty"`
+}
+
+// autoProxy is the automatic proxy configuration of one service: the PAC URL
+// (-getautoproxyurl) and WPAD auto-discovery (-getproxyautodiscovery). When
+// either is on, Chrome and most macOS apps use it INSTEAD of the manual
+// proxies, so Enable turns both off and Disable puts them back.
+type autoProxy struct {
+	URL       string `json:"url,omitempty"`
+	Enabled   bool   `json:"enabled,omitempty"`
+	Discovery bool   `json:"discovery,omitempty"`
 }
 
 // proxySetting is the output of -getwebproxy / -getsecurewebproxy.
@@ -182,6 +195,19 @@ func (m *manager) Enable(ctx context.Context, host string, port int, bypass []st
 		// Keep the pre-pano settings; only the target may have changed.
 		m.log.Info("keeping existing snapshot", "path", m.statePath, "set_at", snap.SetAt)
 		snap.Pano = endpoint{Host: host, Port: port}
+		for i := range snap.Services {
+			if snap.Services[i].Auto != nil {
+				continue
+			}
+			// Snapshot from a version that did not record the automatic
+			// proxy configuration: capture it now so Disable restores it.
+			auto, err := m.getAuto(ctx, snap.Services[i].Name)
+			if err != nil {
+				m.log.Warn("query auto proxy config failed; it will not be restored", "service", snap.Services[i].Name, "error", err)
+				continue
+			}
+			snap.Services[i].Auto = auto
+		}
 	}
 	// The snapshot must be durable before the first change is made, so a
 	// crash at any later point is recoverable by RestoreStale.
@@ -197,6 +223,10 @@ func (m *manager) Enable(ctx context.Context, host string, port int, bypass []st
 			{"-setwebproxy", svc.Name, host, portStr},
 			{"-setsecurewebproxy", svc.Name, host, portStr},
 			append([]string{"-setproxybypassdomains", svc.Name}, bypassArgs(mergeBypass(svc.Bypass, bypass))...),
+			// A PAC or WPAD setup overrides the manual proxies in Chrome and
+			// most apps, so it must be off while pano captures.
+			{"-setautoproxystate", svc.Name, "off"},
+			{"-setproxyautodiscovery", svc.Name, "off"},
 		}
 		for _, args := range cmds {
 			admin, err := m.set(ctx, usedAdmin, args...)
@@ -293,6 +323,15 @@ func restoreCommands(svc serviceState) [][]string {
 		cmds = append(cmds, []string{"-setsecurewebproxystate", svc.Name, "off"})
 	}
 	cmds = append(cmds, append([]string{"-setproxybypassdomains", svc.Name}, bypassArgs(svc.Bypass)...))
+	if svc.Auto != nil {
+		if svc.Auto.URL != "" {
+			// -setautoproxyurl also enables; the state command corrects that.
+			cmds = append(cmds, []string{"-setautoproxyurl", svc.Name, svc.Auto.URL})
+		}
+		cmds = append(cmds,
+			[]string{"-setautoproxystate", svc.Name, onOff(svc.Auto.Enabled && svc.Auto.URL != "")},
+			[]string{"-setproxyautodiscovery", svc.Name, onOff(svc.Auto.Discovery)})
+	}
 	return cmds
 }
 
@@ -327,7 +366,7 @@ func (m *manager) Status(ctx context.Context, host string, port int) (api.SysPro
 		st.Detail = err.Error()
 		return st, err
 	}
-	var pointing []string
+	var pointing, pacs []string
 	var errs []error
 	for _, name := range names {
 		web, err := m.getProxy(ctx, "-getwebproxy", name)
@@ -343,6 +382,18 @@ func (m *manager) Status(ctx context.Context, host string, port int) (api.SysPro
 		if web.pointsAt(host, port) || secure.pointsAt(host, port) {
 			pointing = append(pointing, name)
 		}
+		out, err := m.run.Run(ctx, m.binary, "-getautoproxyurl", name)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("sysproxy: %w", err))
+			continue
+		}
+		if auto := parseAutoProxy(out); auto.Enabled {
+			label := name
+			if auto.URL != "" {
+				label += " (" + auto.URL + ")"
+			}
+			pacs = append(pacs, label)
+		}
 	}
 	st.Enabled = len(pointing) > 0
 	switch {
@@ -353,6 +404,20 @@ func (m *manager) Status(ctx context.Context, host string, port int) (api.SysPro
 		st.Detail = fmt.Sprintf("state file present but no service points at %s (stale; run `pano doctor`)", target)
 	default:
 		st.Detail = fmt.Sprintf("no service points at %s", target)
+	}
+	if len(pacs) > 0 {
+		st.Detail += "; auto proxy config (PAC) is ON for " + strings.Join(pacs, ", ") +
+			" — it overrides pano in Chrome and most apps; re-run `pano on` to turn it off"
+	} else if st.Enabled && snap != nil {
+		var offed []string
+		for _, svc := range snap.Services {
+			if svc.Auto != nil && (svc.Auto.Enabled || svc.Auto.Discovery) {
+				offed = append(offed, svc.Name)
+			}
+		}
+		if len(offed) > 0 {
+			st.Detail += "; auto proxy config turned off on " + strings.Join(offed, ", ") + " — `pano off` restores it"
+		}
 	}
 	return st, errors.Join(errs...)
 }
@@ -391,6 +456,9 @@ func (m *manager) capture(ctx context.Context, host string, port int) (*snapshot
 			return nil, fmt.Errorf("sysproxy: %w", err)
 		}
 		svc.Bypass = parseBypass(out)
+		if svc.Auto, err = m.getAuto(ctx, name); err != nil {
+			return nil, err
+		}
 		snap.Services = append(snap.Services, svc)
 	}
 	return snap, nil
@@ -561,6 +629,59 @@ func parseBypass(out string) []string {
 		list = append(list, line)
 	}
 	return list
+}
+
+// getAuto queries the automatic proxy configuration of one service.
+func (m *manager) getAuto(ctx context.Context, service string) (*autoProxy, error) {
+	out, err := m.run.Run(ctx, m.binary, "-getautoproxyurl", service)
+	if err != nil {
+		return nil, fmt.Errorf("sysproxy: %w", err)
+	}
+	auto := parseAutoProxy(out)
+	if out, err = m.run.Run(ctx, m.binary, "-getproxyautodiscovery", service); err != nil {
+		return nil, fmt.Errorf("sysproxy: %w", err)
+	}
+	auto.Discovery = parseDiscovery(out)
+	return auto, nil
+}
+
+// parseAutoProxy parses -getautoproxyurl output:
+//
+//	URL: http://example/proxy.pac   ("(null)" when unset)
+//	Enabled: No
+func parseAutoProxy(out string) *autoProxy {
+	auto := &autoProxy{}
+	for _, line := range strings.Split(out, "\n") {
+		key, val, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		val = strings.TrimSpace(val)
+		switch strings.TrimSpace(key) {
+		case "URL":
+			if val != "(null)" {
+				auto.URL = val
+			}
+		case "Enabled":
+			auto.Enabled = strings.EqualFold(val, "yes")
+		}
+	}
+	return auto
+}
+
+// parseDiscovery parses -getproxyautodiscovery output:
+//
+//	Auto Proxy Discovery: Off
+func parseDiscovery(out string) bool {
+	_, val, ok := strings.Cut(out, ":")
+	return ok && strings.EqualFold(strings.TrimSpace(val), "on")
+}
+
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
 }
 
 // readSnapshot loads the state file. It returns (nil, nil) when none exists.

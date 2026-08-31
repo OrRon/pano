@@ -21,6 +21,11 @@ type Manager interface {
 	// list. The bypass list written is the union of the service's existing
 	// list, DefaultBypass and bypass.
 	//
+	// It also turns off automatic proxy configuration (PAC URL and WPAD
+	// auto-discovery) on every service: Chrome and most macOS apps use a PAC
+	// INSTEAD of the manual proxies, so leaving one on (a corporate agent's,
+	// say) would silently route traffic around pano. Disable puts it back.
+	//
 	// If a snapshot already exists (pano is already enabled, or a previous
 	// daemon crashed without restoring) it is kept rather than overwritten,
 	// so a later Disable still restores the settings that predate pano.

@@ -175,6 +175,13 @@ The process is using pano as a proxy but does not trust the CA:
   `POST /v1/capture {"action":"start"}`.
 - Does the app honour system proxy settings? Many CLI tools only read
   `HTTPS_PROXY`; use `eval "$(pano env)"`.
+- On a managed (work) Mac, was a PAC re-asserted? Chrome and most apps use an
+  automatic proxy configuration (PAC / WPAD) *instead of* the manual proxies.
+  `pano on` turns it off and `pano off` restores it, but corporate agents may
+  re-assert theirs mid-session — `pano status` warns when that happens; re-run
+  `pano on`. A Chrome enterprise `ProxyMode`/`ProxySettings` policy
+  (`chrome://policy`) overrides system settings entirely; launch a separate
+  Chrome with `--proxy-server=127.0.0.1:<port>` instead.
 - `pano flows --kind tunnel` shows connections that arrived but were not
   decrypted (`never` list, mode `only`/`off`, or a handshake failure); `pano
   decrypt` shows the mode, the lists and recently rejected hosts.
