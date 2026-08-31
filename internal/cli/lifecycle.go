@@ -358,6 +358,7 @@ func (a *App) on(ctx context.Context, yes, background bool) error {
 		// service) and is free to wrap here.
 		a.printf("             %s\n", a.c(dim, sp.Detail))
 	}
+	a.suggestSimulators(ctx)
 	return nil
 }
 

@@ -153,9 +153,11 @@ alone. The default `never` list already covers the Apple daemons that pin
 - VPN apps and "Private Relay" (Settings › Apple ID › iCloud › Private Relay)
   route around a Wi-Fi proxy. Turn them off for the session.
 - **iOS Simulator**: it shares the Mac's network stack, so `pano on` already
-  proxies it. It has its own trust store:
-  `xcrun simctl keychain booted add-root-cert ~/.pano/ca.pem`, then in the
-  simulator *Settings › General › About › Certificate Trust Settings*.
+  proxies it. It has its own trust store (the Mac keychain does not apply):
+  run `pano ca install --simulator` to trust the CA in every booted simulator
+  and restart it — no Settings toggle needed, `add-root-cert` lands directly
+  in the trusted roots. `pano on` and the TUI suggest this automatically when
+  a booted simulator lacks the certificate.
 
 ### Android
 

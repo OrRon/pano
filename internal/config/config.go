@@ -207,6 +207,10 @@ func (p Paths) RulesFile() string { return filepath.Join(p.Dir, "rules.json") }
 // SysProxyState is the system proxy snapshot.
 func (p Paths) SysProxyState() string { return filepath.Join(p.Dir, "sysproxy.json") }
 
+// SimulatorState is the record of which iOS Simulators pano's CA has been
+// installed into (and which asked not to be suggested again).
+func (p Paths) SimulatorState() string { return filepath.Join(p.Dir, "simulators.json") }
+
 // UpdateState caches the last release check (internal/update).
 func (p Paths) UpdateState() string { return filepath.Join(p.Dir, "update-check.json") }
 

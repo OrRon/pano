@@ -256,6 +256,8 @@ func (m *Model) renderFooter(w int) string {
 		hints = []hint{{"⏎", "run"}, {"j/k", "move"}, {"o", "only"}, {"n", "never"}, {"/", "host filter"}, {"esc", "close"}}
 	case modeQuit:
 		hints = []hint{{"q", "turn pano off"}, {"b", "keep in background"}, {"⏎", "highlighted"}, {"esc", "stay"}}
+	case modeSimulator:
+		hints = []hint{{"i", "install & restart"}, {"esc", "later"}, {"x", "don't ask again"}}
 	case modeDecrypt:
 		hints = []hint{{"1/2/3", "all/only/off"}, {"⏎", "→ only"}, {"n", "→ never"}, {"x", "remove"}, {"+", "add host"}, {"⇥", "mobile"}, {"esc", "close"}}
 	case modeMobile:
@@ -269,7 +271,7 @@ func (m *Model) renderFooter(w int) string {
 	case modeHelp:
 		hints = []hint{{"esc", "close"}}
 	default:
-		hints = []hint{{"j/k", "move"}, {"⏎", "open"}, {"o", "options"}, {"/", "filter"}, {"x", "explain"}, {"m", "mark"}, {"d", "diff"}, {"R", "replay"}, {"r", "rules"}, {"h", "held"}, {"D", "decrypt"}, {"M", "mobile"}, {"space", "pause"}, {"?", "help"}, {"q", "quit"}}
+		hints = []hint{{"j/k", "move"}, {"⏎", "open"}, {"o", "options"}, {"/", "filter"}, {"x", "explain"}, {"m", "mark"}, {"d", "diff"}, {"R", "replay"}, {"X", "clear"}, {"r", "rules"}, {"h", "held"}, {"D", "decrypt"}, {"M", "mobile"}, {"space", "pause"}, {"?", "help"}, {"q", "quit"}}
 		if r, ok := m.selected(); ok && r.Kind == flow.KindTunnel {
 			hints = append([]hint{{"n", "never decrypt " + r.Host}}, hints...)
 		}

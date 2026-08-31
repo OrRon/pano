@@ -14,11 +14,14 @@ import (
 
 func (a *App) cmdCA() *cobra.Command {
 	cmd := &cobra.Command{Use: "ca", Short: "Manage the local certificate authority"}
-	var system bool
+	var system, sim bool
 	install := &cobra.Command{
 		Use:   "install",
 		Short: "Trust the pano CA (login keychain; macOS asks for your password once)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if sim {
+				return a.caSimulatorInstall(cmd.Context())
+			}
 			if err := a.caInstall(cmd.Context(), system); err != nil {
 				return err
 			}
@@ -28,6 +31,7 @@ func (a *App) cmdCA() *cobra.Command {
 		},
 	}
 	install.Flags().BoolVar(&system, "system", false, "install into the System keychain (all users; needs sudo)")
+	install.Flags().BoolVar(&sim, "simulator", false, "trust the CA inside every booted iOS Simulator instead of the Mac keychain")
 	uninstall := &cobra.Command{
 		Use:   "uninstall",
 		Short: "Remove the pano CA from the keychain",

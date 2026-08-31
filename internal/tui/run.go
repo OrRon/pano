@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/orron/pano/internal/client"
+	"github.com/orron/pano/internal/simulator"
 	"github.com/orron/pano/internal/update"
 )
 
@@ -23,6 +24,9 @@ type Options struct {
 	// Update, when set, is polled once a second until it returns the result
 	// of the release check (nil while in flight or when nothing is newer).
 	Update func() *update.Info
+	// Sim, when set, is asked once at startup for booted iOS Simulators
+	// that lack pano's certificate; the UI then offers the install.
+	Sim *simulator.Manager
 }
 
 // Run starts the interactive UI and blocks until the user quits. The Exit
@@ -34,6 +38,7 @@ func Run(ctx context.Context, c *client.Client, version string, opts Options) (E
 	m := New(c, version)
 	m.own = opts.Own
 	m.updateFn = opts.Update
+	m.sim = opts.Sim
 	p := tea.NewProgram(m, tea.WithContext(ctx), tea.WithOutput(os.Stderr))
 	_, err := p.Run()
 	if m.sub != nil {

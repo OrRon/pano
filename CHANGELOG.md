@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **iOS Simulator support** — `pano ca install --simulator` trusts pano's CA inside every booted iOS Simulator (`xcrun simctl keychain … add-root-cert`; the Simulator shares the Mac's network stack, so `pano on` already routes its traffic — its own trust store was the only missing piece) and offers to restart the simulator so running apps pick it up. pano now also *detects* the situation and suggests the fix instead of leaving simulator HTTPS silently undecrypted: `pano on -b` prints which booted simulators lack the certificate, and the TUI shows a small mascot modal over the resting list — `i` install & restart, `esc` later, `x` don't ask again — remembered per simulator and per CA (a rotated CA suggests again) in `~/.pano/simulators.json`. Detection is best-effort and silent without Xcode; pano never installs on its own.
+- TUI: `X` clears all captured flows — the first press shows "press X again to clear all N flows" and the second press, while that prompt is on screen, confirms. Same effect as `pano_capture action=clear`: flows, bodies and WebSocket messages are dropped from the daemon's memory; capture keeps running and the list starts fresh.
+
+### Fixed
+- **`pano on` now turns off automatic proxy configuration (PAC / WPAD) and `pano off` restores it.** Chrome and most macOS apps use a PAC file *instead of* the manual proxies when one is configured — common on managed Macs where a corporate agent pushes one — so pano's system proxy was silently ignored and nothing was captured. The PAC URL, its enabled state and Auto Proxy Discovery are snapshotted per service alongside the manual settings (older state files are upgraded in place on the next `pano on`), turned off while pano is on, and put back exactly by `pano off`, the crash watchdog and `pano doctor`. `pano status` warns when a PAC is enabled and overriding pano (agents may re-assert theirs mid-session; re-run `pano on`), and notes which services had their auto-proxy config turned off for the session.
+
 ## [0.1.0] - 2026-08-30
 
 First tagged release: `brew install orron/tap/pano` · `go install github.com/orron/pano/cmd/pano@latest` · archives on GitHub Releases. Beta — macOS first.

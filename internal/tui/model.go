@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/orron/pano/internal/api"
 	"github.com/orron/pano/internal/client"
 	"github.com/orron/pano/internal/flow"
+	"github.com/orron/pano/internal/simulator"
 	"github.com/orron/pano/internal/store"
 	"github.com/orron/pano/internal/update"
 )
@@ -29,6 +31,7 @@ const (
 	modeActions
 	modeHelp
 	modeQuit
+	modeSimulator
 )
 
 // pane is what the detail viewport is showing.
@@ -96,12 +99,17 @@ type Model struct {
 	decryptTarget string // list the + input adds to (only|never)
 	actionIx      int    // highlighted item of the actions menu
 
+	// iOS Simulator suggestion (see simulator.go); sim nil = never detect.
+	sim  *simulator.Manager
+	sims []simulator.Device
+
 	sub     *eventSub
 	th      *Theme
 	unseen  int
 	tab     tab
 	toast   string
 	toastAt time.Time
+	clearAt time.Time // last X press; a second X while the prompt shows clears
 	err     error
 	now     time.Time
 	frame   int
@@ -122,6 +130,9 @@ func New(c *client.Client, version string) *Model {
 // Init implements tea.Model.
 func (m *Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{fetchStatus(m.c), m.reloadFlows(), fetchRules(m.c), tick(), tea.RequestBackgroundColor}
+	if m.sim != nil {
+		cmds = append(cmds, detectSims(m.sim))
+	}
 	if sub, err := openEvents(m.c); err == nil {
 		m.sub = sub
 		cmds = append(cmds, sub.next())
@@ -173,6 +184,38 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusMsg:
 		m.status = msg.st
 		m.err = nil
+		return m, nil
+	case simsMsg:
+		// Only interrupt the resting list; a user already mid-flow keeps
+		// their screen (the CLI hint and `pano ca install --simulator`
+		// still cover them).
+		if len(msg.devs) > 0 && m.mode == modeList {
+			m.sims = msg.devs
+			m.prevMode = modeList
+			m.mode = modeSimulator
+		}
+		return m, nil
+	case simDoneMsg:
+		switch {
+		case msg.err != nil:
+			m.showToast("✗ " + msg.err.Error())
+		case len(msg.devs) == 1:
+			m.showToast("✓ certificate trusted — " + msg.devs[0].Name + " restarting")
+		default:
+			m.showToast("✓ certificate trusted — simulators restarting")
+		}
+		return m, nil
+	case clearedMsg:
+		m.table = newFlowTable(m.table.max)
+		m.flowsGen++ // answers in flight describe the old list; drop them
+		m.hits = nil
+		m.watermark = 0
+		m.unseen = 0
+		m.cursor, m.offset = 0, 0
+		m.marked = 0
+		m.status = msg.st
+		m.applyFilter()
+		m.showToast("✓ cleared — capturing fresh")
 		return m, nil
 	case flowsMsg:
 		if msg.gen != m.flowsGen {
@@ -342,6 +385,8 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeQuit:
 		return m.handleQuitKey(key)
+	case modeSimulator:
+		return m.handleSimulatorKey(key)
 	case modeFilter:
 		return m.handleFilterKey(k)
 	case modeHelp:
@@ -404,6 +449,21 @@ func (m *Model) handleListKey(key string) (tea.Model, tea.Cmd) {
 			m.showToast("replaying " + r.Short + "…")
 			return m, doReplay(m.c, r.ID)
 		}
+	case "X":
+		if m.status.Flows == 0 && len(m.table.rows) == 0 {
+			m.showToast("nothing to clear")
+			return m, nil
+		}
+		if time.Since(m.clearAt) < clearConfirmFor {
+			m.clearAt = time.Time{}
+			return m, doClear(m.c)
+		}
+		m.clearAt = time.Now()
+		n := m.status.Flows
+		if n == 0 {
+			n = len(m.table.rows)
+		}
+		m.showToast(fmt.Sprintf("press X again to clear all %d flows", n))
 	case "/":
 		m.prevMode = modeList
 		m.mode = modeFilter
@@ -876,6 +936,10 @@ func (m *Model) refetchDetail() (tea.Model, tea.Cmd) {
 	m.loading = true
 	return m, fetchDetail(m.c, m.detailID, m.detailQ)
 }
+
+// clearConfirmFor is how long an X press stays armed: exactly as long as its
+// "press X again" toast is on screen.
+const clearConfirmFor = 2500 * time.Millisecond
 
 func (m *Model) showToast(s string) {
 	m.toast = s

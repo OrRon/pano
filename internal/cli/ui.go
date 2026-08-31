@@ -48,6 +48,7 @@ func (a *App) uiPossible() bool {
 // terminal that opened pano is never left guessing whether it is still on.
 func (a *App) runUI(ctx context.Context, opts tui.Options) error {
 	opts.Update = a.upd.Result
+	opts.Sim = a.sim()
 	exit, err := tui.Run(ctx, a.client(), Version(), opts)
 	if err != nil {
 		return err

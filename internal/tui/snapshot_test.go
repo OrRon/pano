@@ -13,6 +13,7 @@ import (
 	"github.com/orron/pano/internal/api"
 	"github.com/orron/pano/internal/client"
 	"github.com/orron/pano/internal/flow"
+	"github.com/orron/pano/internal/simulator"
 )
 
 // sampleModel builds a model populated with realistic data and no daemon.
@@ -174,6 +175,10 @@ func TestSnapshots(t *testing.T) {
 		set  func(m *Model)
 	}{
 		{"list", func(m *Model) { m.mode = modeList }},
+		{"simulator", func(m *Model) {
+			m.mode, m.prevMode = modeSimulator, modeList
+			m.sims = []simulator.Device{{UDID: "u", Name: "iPhone 17", Runtime: "iOS 26.4"}}
+		}},
 		{"detail", func(m *Model) { m.mode = modeDetail; m.pane, m.tab = paneBody, tabSummary; m.setPaneContent() }},
 		{"explain", func(m *Model) { m.mode = modeDetail; m.pane, m.tab = paneExplain, tabExplain; m.setPaneContent() }},
 		{"explain-ok", func(m *Model) {

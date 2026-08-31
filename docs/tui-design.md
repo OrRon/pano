@@ -82,7 +82,8 @@ not this machine; also the `mobile` header chip while `pano mobile` is on) ·
 ## Keys
 
 List: `j/k` move · `g/G` top/bottom · `⏎` open · `x` explain · `m` mark · `d` diff ·
-`R` replay · `/` filter · `f` follow · `space` pause list · `c` toggle capture ·
+`R` replay · `X` clear the list (press twice) · `/` filter · `f` follow ·
+`space` pause list · `c` toggle capture ·
 `r` rules · `h` held · `D` decrypt · `M` mobile · `o` options for the selected flow ·
 `n` never-decrypt the selected tunnel's host · `?` help · `q` quit (asks).
 
@@ -101,6 +102,14 @@ its key on screen — `o` decrypt only this host (adds it and switches mode
 to only), `n` never decrypt it (or undo), `/` filter to the host, `R`
 replay, `m` mark, `x` explain. `j/k` + `⏎` also work. The last line names
 the current decrypt state and whether the host is on a list.
+
+iOS Simulator modal: when the UI opens over a resting list and a booted
+simulator lacks pano's certificate, a small overlay appears — the mascot box
+beside three lines of explanation, the detected simulators listed in full,
+and every action with its key: `i` install & restart the simulator, `esc`
+later (this session), `x` don't ask again (persisted per simulator in
+`~/.pano/simulators.json`). It never interrupts a user who is already in a
+detail view or drawer, and pano never installs without the keypress.
 
 Drawer (one drawer, four tabs — `⇥` cycles rules → held → decrypt → mobile):
 `⏎` toggle rule / resume held / host → only / open or close the proxy to the

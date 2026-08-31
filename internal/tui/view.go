@@ -109,6 +109,15 @@ func (m *Model) render() string {
 		pw := min(w-8, 110)
 		ph := min(bodyH-2, 26)
 		return m.overlay(base, m.renderHelp(pw, ph), (w-pw)/2-1, (h-ph)/2-1, pw)
+	case modeSimulator:
+		if m.bp() == bpS {
+			parts = append([]string{header}, m.renderSimulator(w, bodyH)...)
+			parts = append(parts, footer)
+			return strings.Join(parts, "\n")
+		}
+		pw := min(w-8, 96)
+		ph := min(bodyH-2, m.simulatorRows())
+		return m.overlay(base, m.renderSimulator(pw, ph), (w-pw)/2-1, (h-ph)/2-1, pw)
 	case modeList, modeDetail, modeFilter:
 	}
 	return base

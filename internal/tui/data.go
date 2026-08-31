@@ -208,6 +208,23 @@ func doCapture(c *client.Client, on bool) tea.Cmd {
 	}
 }
 
+// clearedMsg reports that the daemon wiped its captures.
+type clearedMsg struct{ st api.Status }
+
+// doClear asks the daemon to drop every captured flow, body and WebSocket
+// message. Capture keeps running; the daemon answers with its fresh status.
+func doClear(c *client.Client) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		st, err := c.Capture(ctx, api.CaptureRequest{Action: "clear"})
+		if err != nil {
+			return actionMsg{err: err}
+		}
+		return clearedMsg{st}
+	}
+}
+
 func tick() tea.Cmd {
 	return tea.Tick(250*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
 }

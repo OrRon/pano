@@ -11,6 +11,7 @@ import (
 
 	"github.com/orron/pano/internal/api"
 	"github.com/orron/pano/internal/flow"
+	"github.com/orron/pano/internal/simulator"
 )
 
 // The cursor row and the bars must be painted edge to edge: every SGR reset
@@ -370,3 +371,115 @@ func TestQuitOverlayKeys(t *testing.T) {
 		t.Fatalf("a failed off must fall back to the ui: mode=%v toast=%q", m.mode, m.toast)
 	}
 }
+
+// TestClearKey: X asks for a second press, a second X issues the clear, the
+// daemon's answer wipes the local table, and a lone X expires with its prompt.
+func TestClearKey(t *testing.T) {
+	m := sampleModel(120, 40)
+	m.mode = modeList
+	rows := len(m.table.rows)
+	if rows == 0 {
+		t.Fatal("sample has no rows")
+	}
+	mm, cmd := m.Update(tea.KeyPressMsg{Code: 'X', Text: "X"})
+	m = mm.(*Model)
+	if cmd != nil {
+		t.Fatal("first X must not clear")
+	}
+	if !strings.Contains(m.toast, "again") || !strings.Contains(m.toast, "1318") {
+		t.Fatalf("toast = %q", m.toast)
+	}
+	if len(m.table.rows) != rows {
+		t.Fatal("first X touched the table")
+	}
+	mm, cmd = m.Update(tea.KeyPressMsg{Code: 'X', Text: "X"})
+	m = mm.(*Model)
+	if cmd == nil {
+		t.Fatal("second X should issue the clear")
+	}
+	gen := m.flowsGen
+	mm, _ = m.Update(clearedMsg{st: api.Status{Capturing: true}})
+	m = mm.(*Model)
+	if len(m.table.rows) != 0 || len(m.visible) != 0 || m.flowsGen != gen+1 {
+		t.Fatalf("after clear: rows=%d visible=%d gen=%d (want %d)", len(m.table.rows), len(m.visible), m.flowsGen, gen+1)
+	}
+	if !strings.Contains(m.toast, "cleared") {
+		t.Fatalf("toast = %q", m.toast)
+	}
+	// An expired confirm re-prompts instead of clearing.
+	m.clearAt = time.Now().Add(-3 * time.Second)
+	m.status.Flows = 5
+	mm, cmd = m.Update(tea.KeyPressMsg{Code: 'X', Text: "X"})
+	m = mm.(*Model)
+	if cmd != nil || !strings.Contains(m.toast, "again") {
+		t.Fatalf("expired confirm should re-prompt: toast=%q", m.toast)
+	}
+	// With nothing captured anywhere, X says so.
+	m.status.Flows = 0
+	m.table = newFlowTable(m.table.max)
+	m.clearAt = time.Time{}
+	mm, cmd = m.Update(tea.KeyPressMsg{Code: 'X', Text: "X"})
+	m = mm.(*Model)
+	if cmd != nil || !strings.Contains(m.toast, "nothing") {
+		t.Fatalf("empty clear: toast=%q", m.toast)
+	}
+}
+
+// TestSimulatorModal: a detection result opens the mascot modal over a
+// resting list (and only there), i issues the install and closes, esc defers
+// for the session, x dismisses persistently.
+func TestSimulatorModal(t *testing.T) {
+	m := sampleModel(120, 40)
+	m.mode = modeList
+	m.sim = simulator.New(t.TempDir()+"/ca.pem", t.TempDir()+"/simulators.json")
+	devs := []simulator.Device{{UDID: "u1", Name: "iPhone 17", Runtime: "iOS 26.4"}}
+	mm, _ := m.Update(simsMsg{devs: devs})
+	m = mm.(*Model)
+	if m.mode != modeSimulator {
+		t.Fatalf("simsMsg should open the modal, mode=%v", m.mode)
+	}
+	got := ansi.Strip(m.View().Content)
+	for _, want := range []string{"iOS SIMULATOR", "iPhone 17 (iOS 26.4)", "install & restart", "don't ask again", "later"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("modal missing %q", want)
+		}
+	}
+
+	mm, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = mm.(*Model)
+	if m.mode != modeList || m.sims != nil {
+		t.Fatalf("esc: mode=%v sims=%v", m.mode, m.sims)
+	}
+
+	m.sims, m.mode, m.prevMode = devs, modeSimulator, modeList
+	mm, cmd := m.Update(tea.KeyPressMsg{Code: 'i', Text: "i"})
+	m = mm.(*Model)
+	if cmd == nil || m.mode != modeList || m.sims != nil {
+		t.Fatalf("i should install and close: cmd=%v mode=%v", cmd, m.mode)
+	}
+	mm, _ = m.Update(simDoneMsg{devs: devs})
+	m = mm.(*Model)
+	if !strings.Contains(m.toast, "iPhone 17") {
+		t.Fatalf("toast = %q", m.toast)
+	}
+	mm, _ = m.Update(simDoneMsg{devs: devs, err: errFake})
+	if !strings.Contains(mm.(*Model).toast, "✗") {
+		t.Fatalf("error toast = %q", mm.(*Model).toast)
+	}
+
+	m.sims, m.mode = devs, modeSimulator
+	mm, _ = m.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	if mm.(*Model).mode != modeList {
+		t.Fatal("x should close the modal")
+	}
+
+	// A user mid-flow is never interrupted.
+	m2 := sampleModel(120, 40)
+	m2.mode = modeDetail
+	mm, _ = m2.Update(simsMsg{devs: devs})
+	if mm.(*Model).mode != modeDetail {
+		t.Fatal("simsMsg interrupted the detail view")
+	}
+}
+
+var errFake = errors.New("simulator: install into iPhone 17: boom")

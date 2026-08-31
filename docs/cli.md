@@ -170,6 +170,17 @@ On other OSes prints manual instructions.
 | Flag | Meaning |
 |---|---|
 | `--system` | install into the System keychain for all users (runs `sudo`) |
+| `--simulator` | trust the CA inside every **booted iOS Simulator** instead of the Mac keychain |
+
+`--simulator` uses `xcrun simctl keychain <udid> add-root-cert` (Xcode or its
+Command Line Tools required): the certificate lands directly in the
+simulator's trusted root store — no password, no Settings toggle — and the
+command offers to restart the simulator so running apps pick it up. The
+Simulator shares the Mac's network stack, so `pano on` already routes its
+traffic; trust is the only missing piece. `pano on` and the TUI suggest this
+when a booted simulator lacks the current certificate (the TUI as a small
+modal with install/later/don't-ask-again; the suggestion is remembered per
+simulator in `~/.pano/simulators.json`). pano never installs on its own.
 
 ### `pano ca uninstall`
 
