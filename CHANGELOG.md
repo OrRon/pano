@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-01
+
 ### Added
 - **iOS Simulator support** — `pano ca install --simulator` trusts pano's CA inside every booted iOS Simulator (`xcrun simctl keychain … add-root-cert`; the Simulator shares the Mac's network stack, so `pano on` already routes its traffic — its own trust store was the only missing piece) and offers to restart the simulator so running apps pick it up. pano now also *detects* the situation and suggests the fix instead of leaving simulator HTTPS silently undecrypted: `pano on -b` prints which booted simulators lack the certificate, and the TUI shows a small mascot modal over the resting list — `i` install & restart, `esc` later, `x` don't ask again — remembered per simulator and per CA (a rotated CA suggests again) in `~/.pano/simulators.json`. Detection is best-effort and silent without Xcode; pano never installs on its own.
 - TUI: `X` clears all captured flows — the first press shows "press X again to clear all N flows" and the second press, while that prompt is on screen, confirms. Same effect as `pano_capture action=clear`: flows, bodies and WebSocket messages are dropped from the daemon's memory; capture keeps running and the list starts fresh.
@@ -64,5 +66,6 @@ First tagged release: `brew install orron/tap/pano` · `go install github.com/or
 ### Performance
 - Apple M-series, 64 concurrent clients, small JSON responses, capture on: ~70k req/s through pano vs ~146k direct; p50 added latency ≈ 0.4 ms, p99 ≈ 3 ms. Captures are held in memory only, so the proxy path never waits on storage.
 
-[Unreleased]: https://github.com/OrRon/pano/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/OrRon/pano/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/OrRon/pano/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/OrRon/pano/releases/tag/v0.1.0
